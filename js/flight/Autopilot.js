@@ -96,6 +96,23 @@ export class Autopilot {
     return Math.max(highest + margin, 300 * Math.sqrt(w.navScale));
   }
 
+  // Terrain awareness: highest ground (or building) within a few km ahead on the
+  // current heading and on the way to the desired heading.
+  terrainAhead(desiredHeading) {
+    const w = this.world;
+    const p = this.model.position;
+    const range = 2500 * Math.sqrt(w.navScale);
+    let highest = -Infinity;
+    [this.model.heading, desiredHeading].forEach((h) => {
+      for (let d = 0; d <= range; d += 150) {
+        const x = p.x + Math.sin(h) * d;
+        const z = p.z + Math.cos(h) * d;
+        highest = Math.max(highest, w.heightAt(x, z), w.obstacleAt ? w.obstacleAt(x, z) : 0);
+      }
+    });
+    return highest;
+  }
+
   // Runway-local position along the approach: along > 0 is distance out from the runway centre.
   approachGeometry() {
     const { runway, sign } = this.plan;
@@ -136,6 +153,8 @@ export class Autopilot {
         const ipAltitude = runway.y + (this.plan.interceptDistance + aimOffset) * Math.tan(glide);
         // Continuous descent: never higher than a 3.5 deg path down to the intercept point.
         targetAltitude = Math.max(ipAltitude, Math.min(this.cruiseAltitude, ipAltitude + dist * Math.tan((3.5 * Math.PI) / 180)));
+        // ...but never lower than the hills ahead plus a safety margin.
+        targetAltitude = Math.max(targetAltitude, this.terrainAhead(desiredHeading) + 150 * Math.sqrt(this.world.navScale));
         targetSpeed = dist > 6000 * Math.sqrt(this.world.navScale / 4) ? perf.stallSpeed[0] * 1.75 : perf.stallSpeed[1] * 1.35;
         if (m.flaps > 0 && targetSpeed > perf.stallSpeed[0] * 1.5 && m.speed > perf.stallSpeed[0] * 1.3) m.flaps = 0;
         const onCourse = Math.abs(wrapAngle(m.heading - this.plan.course)) < 0.6 && Math.abs(lateral) < 1500 * scale;
@@ -164,7 +183,11 @@ export class Autopilot {
 
     // --- heading -> bank (or nose-wheel steering on the ground)
     const headingError = wrapAngle(m.heading - desiredHeading);
-    const maxBank = 0.44; // 25 deg
+    // Climb-out: wings (almost) level until well clear of the ground, so the turn
+    // towards the destination doesn't happen low down next to rising terrain.
+    const climbOut = this.phase === 'CRUISE' && m.agl < 250 * Math.sqrt(this.world.navScale)
+      && m.position.y < this.cruiseAltitude - 50;
+    const maxBank = climbOut ? 0.1 : 0.44; // ~6 deg / 25 deg
     let roll;
     if (m.onGround) {
       roll = clamp(headingError * 3, -1, 1);

@@ -46,12 +46,12 @@ export function findRunway(world, airportId, label) {
 
 // Spawn state for the flight model. A runway's designators[0] direction runs
 // towards its local -Z (world heading = rotation + PI); designators[1] the other way.
-export function spawnFor(world, airportId, label, start) {
+// perf / size: the chosen aircraft's performance and size (1 = the SkyVision trainer).
+export function spawnFor(world, airportId, label, start, { perf = world.performance, size = world.aircraftScale } = {}) {
   const runway = findRunway(world, airportId, label);
   const sign = !label || runway.designators[0] === label ? 1 : -1;
   const heading = runway.rotation + (sign > 0 ? Math.PI : 0);
   const halfL = runway.length / 2;
-  const perf = world.performance;
 
   if (start === 'final') {
     const distance = world.finalDistance;
@@ -67,7 +67,7 @@ export function spawnFor(world, airportId, label, start) {
       speed, throttle, flaps: 2, gearDown: true, pitch: -glide, runway,
     };
   }
-  const p = fromRunwayLocal(runway, 0, sign * (halfL - 18 * world.aircraftScale));
+  const p = fromRunwayLocal(runway, 0, sign * (halfL - 18 * size));
   return {
     position: { x: p.x, y: runway.y, z: p.z }, heading, airborne: false,
     speed: 0, throttle: 0, flaps: 1, gearDown: true, pitch: 0, runway,

@@ -10,6 +10,7 @@ import { VehicleManager } from './vehicles/VehicleManager.js';
 import { PlayerFlight } from './flight/PlayerFlight.js';
 import { Effects } from './flight/Effects.js';
 import { EngineSound } from './flight/EngineSound.js';
+import { TaxiRouteView } from './flight/TaxiRoute.js';
 import { loadMumbaiWorld } from './world/mumbai/MumbaiWorld.js';
 import { InputManager } from './input/InputManager.js';
 import { TouchControls, IS_TOUCH } from './input/TouchControls.js';
@@ -23,13 +24,17 @@ const renderer = createRenderer(canvas, { maxPixelRatio: IS_TOUCH ? 1.5 : 2 });
 const { scene, world, skyVision } = createScene();
 const lighting = new LightingManager(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
-const aircraft = new Aircraft({ livery: 'skyvision', withLights: true });
+// Real-size A320 model (metres); the SkyVision valley is drawn at 1/1.4 of real size.
+const VALLEY_SCALE = 1 / 1.4;
+const aircraft = new Aircraft({ type: 'a320', livery: 'skyvision', withLights: true });
+aircraft.root.scale.setScalar(VALLEY_SCALE);
 world.add(aircraft.root);
 const demoFlight = new FlightController(aircraft);
 const vehicles = new VehicleManager(world);
 const effects = new Effects(scene);
 const sound = new EngineSound();
 const player = new PlayerFlight({ aircraft, effects, sound });
+const taxiRoute = new TaxiRouteView(world);
 
 const cameras = new CameraManager(window.innerWidth / window.innerHeight);
 const clipping = new ClippingDemo(renderer, scene, world);
@@ -63,6 +68,10 @@ const menu = new Menu({
 });
 
 player.on('message', (text) => hud.toast(text.toUpperCase()));
+player.on('route', (route) => {
+  if (route) taxiRoute.show(route, activeWorld.heightAt, 3.2 * Math.sqrt(player.size));
+  else taxiRoute.hide();
+});
 player.on('landed', (report) => {
   touch.setMode('none');
   state = 'report';
@@ -82,6 +91,7 @@ function activateWorld(target) {
   world.visible = target === skyVision;
   if (mumbai) mumbai.group.visible = target === mumbai;
   target.group.add(aircraft.root);
+  taxiRoute.setParent(target.group);
   scene.fog.near = target.fog.near;
   scene.fog.far = target.fog.far;
   cameras.setFar(target.cameraFar);
@@ -128,6 +138,7 @@ async function startFlight(mission) {
   lastFlight = mission;
   activateWorld(mission.world === 'mumbai' ? mumbai : skyVision);
   aircraft.applyLivery(menu.airline);
+  if (mission.world === 'mumbai') mission = { ...mission, aircraftType: menu.aircraftType };
   enterRunning();
   hud.setVisible(false);
   flightHud.setVisible(true);
@@ -143,8 +154,10 @@ function leaveFlight() {
   effects.clear();
   activeWorld.aids.setTarget(null);
   lighting.setShadowFocus(null);
+  taxiRoute.hide();
   aircraft.root.visible = true;
-  aircraft.root.scale.setScalar(1);
+  if (aircraft.type !== 'a320') aircraft.setType('a320');
+  aircraft.root.scale.setScalar(VALLEY_SCALE);
   aircraft.applyLivery('skyvision');
 }
 
@@ -316,12 +329,13 @@ function frame() {
   if (!paused) {
     if (activeWorld === skyVision) vehicles.update(appMode === 'demo' ? dt * SPEEDS[speedIndex] : dt, elapsed, lighting.night);
     effects.update(dt);
+    taxiRoute.update(dt);
   }
   lighting.update(dt, elapsed);
   activeWorld.aids.update(aircraft.root.position, lighting.night);
   aircraft.updateLights(elapsed, lighting.night);
   cameras.update(dt, input, aircraft, {
-    towerEye: nearestTowerEye(), shake: effects.shake, scale: appMode === 'flight' ? activeWorld.aircraftScale : 1,
+    towerEye: nearestTowerEye(), shake: effects.shake, scale: appMode === 'flight' ? player.size : 1,
   });
   clipping.update(elapsed);
   lighting.sky.follow(cameras.camera);

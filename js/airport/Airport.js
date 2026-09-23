@@ -29,17 +29,15 @@ export function createAirport() {
   return group;
 }
 
-// Two parked airliners at the gates: the same Aircraft model reused with a
-// different livery and a uniform scale of 0.85 (scaling transformation).
+// A parked A320 at gate 1 (gate 2 is kept free for the player to taxi to): the
+// same Aircraft model with another livery and a uniform scale (the model is in
+// real metres; the valley is drawn at 1/1.4 of real size).
 function createGateAircraft() {
   const group = new THREE.Group();
-  const liveries = [0xc0392b, 0x16a085];
-  GATE_Z.forEach((z, i) => {
-    const plane = new Aircraft({ livery: liveries[i] });
-    plane.root.scale.setScalar(0.85);
-    plane.root.position.set(72, 0, z);
-    plane.root.rotation.y = Math.PI / 2; // nose (+Z local) turned to face +X, the terminal
-    group.add(plane.root);
-  });
+  const plane = new Aircraft({ type: 'a320', livery: 0xc0392b });
+  plane.root.scale.setScalar(1 / 1.4);
+  plane.root.position.set(72, 0, GATE_Z[0]);
+  plane.root.rotation.y = Math.PI / 2; // nose (+Z local) turned to face +X, the terminal
+  group.add(plane.root);
   return group;
 }

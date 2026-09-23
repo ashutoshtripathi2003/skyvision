@@ -75,10 +75,15 @@ emissive with glow sprites. One value `night` from 0 to 1 blends all intensities
 is smooth.
 
 ### 13. How is the aircraft model created?
-Only primitives are used. The fuselage is a cylinder, the nose a scaled sphere and the tail a cone. The
-wings, stabilisers and fin are 2D polygon shapes **extruded** into 3D solids; the right side is a mirrored
-copy. The engines are cylinders and the gear is struts plus wheel cylinders. All parts are children of one
-`root` group, so moving or rotating the root moves the whole aircraft (hierarchical modelling).
+It is built in code from the real dimensions of the A320, A350 and A380 (`AircraftTypes.js`), with no 3D
+model files. The **fuselage** is a set of cross-section rings along the body: the radius grows at the nose,
+stays constant along the cabin, and the belly sweeps up into the tail cone. Neighbouring rings are joined
+with triangles, and each vertex gets a UV coordinate (along, around) so the livery can be wrapped onto it.
+The **wings, stabilisers and fin** are an airfoil cross-section **lofted** through root, kink and tip
+stations, with the winglet (A320 sharklet, A350 curved tip, A380 fence) as extra stations. The right wing is
+the left wing mirrored (`scale.x = −1`). The **engine nacelles** are a 2D profile turned 360° with
+`LatheGeometry`. The **landing gear** has 2, 4 or 6-wheel bogies. All parts are children of one `root`
+group (hierarchical modelling), so moving the root moves the whole aircraft.
 
 ### 14. What coordinate system are you using?
 A right-handed 3D Cartesian system: +X east, +Y up, +Z south (so north is −Z), units in metres.
@@ -224,6 +229,36 @@ Each runway is built along its own local axis and then rotated to its real headi
 **Q. Are the airline liveries official?**
 No. They are simplified colour schemes (tail, engines, cheatline and the airline name) inspired by Indian
 airlines, used for an educational, non-commercial project. No logos are reproduced.
+
+**Q. How is the livery painted on the aircraft?**
+With texture mapping. A 2048 × 512 canvas is drawn in code: the base colour, the cheatline, every passenger
+window (one or two decks, skipping the doors), door outlines, cockpit windows and the airline title. The
+fuselage's UV coordinates map the canvas onto it, with u along the body and v around it. A second canvas holds
+only the lit windows and is used as the **emissive map**, so the cabin windows glow at night.
+
+**Q. How does the aircraft find its way to the gate after landing?**
+The taxiways are a **graph**. Every point on a taxiway centreline is a node, and points shared by two
+taxiways join them. The edges are weighted by length. After landing we pick the next runway exit ahead, run
+**Dijkstra's shortest-path algorithm** from it, and choose the free stand that is cheapest to reach
+(preferring stands with a jet bridge, and only stands wide enough for the wingspan). The aircraft follows the
+route with **pure-pursuit steering**: it always steers towards a point a fixed distance further along the
+path. It slows down before sharp turns and brakes so the nose wheel stops on the stand mark
+(v² = 2·a·s).
+
+**Q. How is the sound made? Are there audio files?**
+No files: it uses the Web Audio API. The engine is low-passed noise (rumble), two slightly detuned sine tones
+(fan whine; the small difference makes them "beat" like two engines), and a low hum. Their pitch and volume
+follow N1, a value that lags behind the throttle the way a real turbofan spools up. Wind is band-passed
+noise that grows with airspeed. On the runway there is a rumble plus a soft thump every 20 m (concrete
+joints). On touchdown, a short noise burst sweeping down in pitch makes the tyre chirp, and a falling sine
+makes the thud. Both are louder for a harder landing, and the camera shakes a little. The continuous sounds
+pass through a compressor at a low master volume, so they stay in the background.
+
+**Q. Why do the A350 and A380 need a longer runway?**
+In the flight model the acceleration is thrust − drag − rolling friction, and heavier aircraft have less
+thrust per kilogram, so they accelerate more slowly. They also need a higher speed to lift off
+(liftoff ≈ 1.2 × stall speed). The measured takeoff rolls are about 1.1 km (A320), 1.45 km (A350) and 1.75 km
+(A380), all shorter than Mumbai's 2.9 km and 3.5 km runways.
 
 **Q. Can it run on a phone? How do the touch controls work?**
 Yes. It's a website (deployed on Vercel), so it runs in the phone's browser using the phone's GPU through

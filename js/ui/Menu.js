@@ -1,11 +1,27 @@
 import { MISSIONS } from '../flight/Missions.js';
 import { LIVERIES, INDIAN_AIRLINES } from '../aircraft/Liveries.js';
+import { AIRCRAFT_TYPES, TYPE_KEYS } from '../aircraft/AircraftTypes.js';
 
 // All HTML overlay screens: main menu, mission select (with airline picker),
 // loading, landing report, crash, controls, pause and exit.
 const $ = (id) => document.getElementById(id);
 const SCREENS = ['menu', 'missions', 'loading', 'results', 'crash', 'controls', 'pause', 'exit'];
 const AIRLINE_CHOICES = [...INDIAN_AIRLINES, 'skyvision'];
+
+const TYPE_NOTES = {
+  a320: 'Single aisle · 38 m · nimble',
+  a350: 'Wide-body · 67 m · long haul',
+  a380: 'Double-deck · 73 m · 4 engines',
+};
+
+function readSaved(key, choices, fallback) {
+  try {
+    const saved = localStorage.getItem(key);
+    return choices.includes(saved) ? saved : fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 function readSavedAirline() {
   try {
@@ -22,6 +38,7 @@ export class Menu {
     this.screens = SCREENS.map($);
     this.returnTo = 'menu';
     this.airline = readSavedAirline();
+    this.aircraftType = readSaved('skyvision.type', TYPE_KEYS, 'a320');
 
     $('btn-fly').onclick = () => this.show('missions');
     $('btn-start').onclick = handlers.onStartDemo;
@@ -41,7 +58,29 @@ export class Menu {
     $('btn-crash-menu').onclick = handlers.onMainMenu;
 
     this.buildAirlinePicker();
+    this.buildTypePicker();
     this.buildMissionCards();
+  }
+
+  buildTypePicker() {
+    const row = $('type-list');
+    TYPE_KEYS.forEach((key) => {
+      const chip = document.createElement('button');
+      chip.className = 'type-chip';
+      chip.id = `type-${key}`;
+      chip.setAttribute('aria-pressed', String(key === this.aircraftType));
+      const name = document.createElement('strong');
+      name.textContent = AIRCRAFT_TYPES[key].short;
+      const note = document.createElement('span');
+      note.textContent = TYPE_NOTES[key];
+      chip.append(name, note);
+      chip.onclick = () => {
+        this.aircraftType = key;
+        try { localStorage.setItem('skyvision.type', key); } catch { /* storage unavailable */ }
+        row.querySelectorAll('.type-chip').forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+      };
+      row.appendChild(chip);
+    });
   }
 
   buildAirlinePicker() {

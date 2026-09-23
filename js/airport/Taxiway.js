@@ -14,6 +14,19 @@ export const CONNECTOR_A2_Z = -100;
 export const APRON = { minX: 45, maxX: 88, minZ: -88, maxZ: 122 };
 export const GATE_Z = [-55, -15];
 
+// Taxiway centrelines as polylines [x0, z0, x1, z1, ...] for the automatic taxi
+// to the gate (TaxiGraph turns shared points into junctions).
+export const TAXI_NETWORK = [
+  [0, CONNECTOR_A1_Z, TAXIWAY_A_X, CONNECTOR_A1_Z, 50, CONNECTOR_A1_Z],
+  [TAXIWAY_A_X, CONNECTOR_A1_Z, TAXIWAY_A_X, GATE_Z[1], TAXIWAY_A_X, CONNECTOR_A2_Z, 0, CONNECTOR_A2_Z],
+  [50, CONNECTOR_A1_Z, 50, GATE_Z[1]],
+  [TAXIWAY_A_X, GATE_Z[1], 50, GATE_Z[1]],
+];
+// Gate 2 is kept free for the player's aircraft (nose wheel stops at x = 81, facing the terminal).
+export const STANDS = [
+  { x: 81, z: GATE_Z[1], heading: Math.PI / 2, airport: 'SKV', name: '2 (terminal)', contact: true, occupied: false },
+];
+
 const TAXI_WIDTH = 10;
 const yellow = new THREE.MeshStandardMaterial({ color: 0xffc814, roughness: 0.8 });
 

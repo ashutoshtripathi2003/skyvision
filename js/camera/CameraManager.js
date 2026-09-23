@@ -26,7 +26,6 @@ const TOP_CENTER = new THREE.Vector3(70, 0, 0);
 const AIRPORT_VIEW = { position: new THREE.Vector3(-65, 32, 185), target: new THREE.Vector3(55, 0, -10) };
 const FOLLOW_OFFSET = new THREE.Vector3(0, 7, -32); // behind (-Z) and above the aircraft, in its local frame
 const CHASE_OFFSET = new THREE.Vector3(0, 6, -27);
-const COCKPIT_EYE = new THREE.Vector3(0, 4.5, 12.9);
 const HOME_TOWER_EYE = new THREE.Vector3(TOWER.x - 3, TOWER.cabHeight + 0.5, TOWER.z);
 const FREE_SPEED = 40;
 const FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
@@ -169,7 +168,8 @@ export class CameraManager {
         // Camera rigidly attached to the aircraft: eye point transformed from
         // aircraft space to world space, orientation = aircraft orientation
         // turned 180 deg (a camera looks down its -Z, the aircraft's nose is +Z).
-        cam.position.copy(COCKPIT_EYE).multiplyScalar(scale).applyQuaternion(plane.quaternion).add(plane.position);
+        // The eye point comes from the aircraft type (A380 pilots sit much higher).
+        cam.position.copy(aircraft.cockpitEye).multiply(plane.scale).applyQuaternion(plane.quaternion).add(plane.position);
         cam.quaternion.copy(plane.quaternion).multiply(FLIP);
         break;
       }

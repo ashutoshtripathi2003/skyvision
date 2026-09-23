@@ -6,6 +6,7 @@ import { createMumbaiAirports } from './MumbaiAirports.js';
 import { RunwayAids } from '../RunwayAids.js';
 import { createWorldMap } from '../WorldMap.js';
 import { AIRLINER } from '../../flight/FlightModel.js';
+import { TaxiGraph } from '../../flight/Taxi.js';
 
 // "Real World: Mumbai" - built at runtime from real map + elevation data.
 // Returns the same world interface as SkyVisionWorld so the flight logic,
@@ -27,7 +28,7 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
   await nextFrame();
 
   onProgress('Building airports and parking the fleet');
-  const { group: airportGroup, towerEyes } = createMumbaiAirports(data);
+  const { group: airportGroup, towerEyes, stands } = createMumbaiAirports(data);
   group.add(airportGroup);
 
   const airports = data.json.airports.map((a) => ({
@@ -55,7 +56,10 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
     airports,
     runways,
     performance: AIRLINER,
-    aircraftScale: 1.4,
+    aircraftScale: 1.4,        // 1.4 = a real-size A320 (the models are drawn at aircraftScale / 1.4)
+    aircraftTypes: true,       // A320 / A350 / A380 can be chosen here
+    taxiGraph: new TaxiGraph(data.json.taxiways.map((t) => t.p)),
+    stands,
     glideSlope: 3,
     navScale: 4,
     mapRange: 14000,

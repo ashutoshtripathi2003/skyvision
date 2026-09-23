@@ -28,6 +28,7 @@ export const TRAINER = {
   rollingFriction: 0.3,
   gearTransit: 3,           // seconds to raise/lower the gear
   maxGroundPitch: 0.24,     // ~14 deg before the tail would strike
+  reverseDecel: 1.4,        // extra deceleration from reverse thrust after landing
 };
 
 // A320-class airliner at real scale, used over Mumbai (rotate ~135 kt, approach ~130 kt, cruise ~290 kt).
@@ -45,6 +46,7 @@ export const AIRLINER = {
   rollingFriction: 0.25,
   gearTransit: 6,
   maxGroundPitch: 0.21,
+  reverseDecel: 1.3,
 };
 
 const LOCAL_X = new THREE.Vector3(1, 0, 0);
@@ -62,7 +64,7 @@ export class FlightModel {
     this.stick = { pitch: 0, roll: 0, yaw: 0 };
     this.q = new THREE.Quaternion();
     this.assist = true;
-    this.setPerformance(TRAINER, 1);
+    this.setPerformance(TRAINER);
     this.reset({ position: new THREE.Vector3(), heading: 0 });
   }
 
@@ -79,15 +81,16 @@ export class FlightModel {
     this.verticalSpeed = 0;
     this.agl = 0;
     this.brake = false;
+    this.reverse = false;     // thrust reversers (only deployed on the ground)
     this.stick = { pitch: 0, roll: 0, yaw: 0 };
     this.quaternion.setFromEuler(new THREE.Euler(-pitch, heading, 0, 'YXZ'));
     this.updateAttitude();
   }
 
-  // Performance profile + visual scale of the aircraft (the belly height scales with it).
-  setPerformance(perf, scale = 1) {
+  // Performance profile + height of the belly above the ground (for a gear-up landing).
+  setPerformance(perf, bellyHeight = 1.4) {
     this.perf = perf;
-    this.bellyHeight = 1.4 * scale;
+    this.bellyHeight = bellyHeight;
   }
 
   get stallSpeed() {
@@ -141,7 +144,9 @@ export class FlightModel {
     let accel = P.thrust * this.throttle - P.drag * dragFactor * this.speed * this.speed - gravityAlongPath;
     if (this.onGround && this.speed > 0) {
       accel -= P.rollingFriction + (this.brake ? P.brakeDecel : 0);
+      if (this.reverse && this.speed > 8) accel -= P.reverseDecel || 1.3;
     }
+    if (!this.onGround) this.reverse = false;
     this.speed = Math.max(0, this.speed + accel * dt);
     const authority = clamp(this.speed / this.stallSpeed, 0.12, 1.15); // controls are weak when slow
 

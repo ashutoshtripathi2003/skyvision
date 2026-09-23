@@ -6,6 +6,8 @@ import { towerEyeFor, GLIDE_SLOPE_DEG } from './Airfields.js';
 import { createWorldMap } from './WorldMap.js';
 import { TOWER } from '../airport/Tower.js';
 import { TRAINER } from '../flight/FlightModel.js';
+import { TaxiGraph } from '../flight/Taxi.js';
+import { TAXI_NETWORK, STANDS } from '../airport/Taxiway.js';
 
 // The fictional SkyVision valley (home airport + Lakeview + Summit) described
 // with the common world interface used by the flight logic, cameras and HUD.
@@ -42,6 +44,8 @@ export function createSkyVisionWorld(group, aids) {
     runways,
     performance: TRAINER,
     aircraftScale: 1,
+    taxiGraph: new TaxiGraph(TAXI_NETWORK),
+    stands: STANDS,
     glideSlope: GLIDE_SLOPE_DEG,
     navScale: 1,
     mapRange: 4200,

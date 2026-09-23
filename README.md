@@ -13,6 +13,11 @@ A Computer Graphics minor project built with **WebGL + Three.js**. It has three 
    126,000 city buildings, the road network including the sea bridges, and parked aircraft in Indian airline
    colours at the real stands.
 
+You can fly an **Airbus A320, A350 or A380**. Each is modelled from its real dimensions, with the right
+engine count and a livery painted onto the fuselage. After landing, the aircraft **taxis itself along the
+real taxiways to a free gate at the terminal**, following a green route line. The sound is procedural:
+turbofan spool-up, wind, runway rumble, reverse thrust, and a tyre chirp and thud on touchdown.
+
 ## Running it
 
 ES modules must be served over `http://`. Double-clicking `index.html` (`file://`) shows a blank page.
@@ -50,10 +55,20 @@ Then open **http://localhost:5173**. Three.js and the Mumbai data are stored in 
 | `T` | Flight assist on/off (off = full aerobatics) |
 | `R` | Restart the flight |
 | `M` | Mute engine sound |
+| `P` (while taxiing) | Skip the taxi and park at the gate straight away |
 
 **Autopilot:** after takeoff, press **P**. The autopilot raises the gear, climbs to a safe height, flies to
 the destination, picks the best runway, follows the 3° glide path, then lands and brakes by itself. The
 report then shows "Landed by: Autopilot". In free flight it holds your heading, height and speed.
+
+**Aircraft:** pick A320, A350 or A380 on the flight menu (Mumbai flights; the valley uses a scaled A320).
+The bigger jets are heavier: slower to accelerate, rotate and roll, with higher approach speeds and longer
+takeoff runs (A320 ~1.1 km, A350 ~1.45 km, A380 ~1.75 km). A350s only park at stands wide enough for their
+65 m wingspan, and A380s only at stands wide enough for their 80 m wingspan.
+
+**After landing:** idle thrust deploys the reversers. Below about taxi speed the aircraft plans a route over
+the taxiway network to the nearest free gate, preferring gates with a jet bridge, and taxis there by itself.
+The report then shows which stand you parked at.
 
 **How to land yourself:** line up with the runway and lower the gear and full flaps. Fly the PAPI lights (two white
 and two red means you're on the glide path). Hold about 130 kt in Mumbai (55 kt in the valley), ease the
@@ -85,7 +100,7 @@ appear automatically:
 |---|---|
 | Left stick | Drag down = nose up, up = nose down, sideways = roll / steer on the ground |
 | THR slider (right) | Slide up for more power, down for less |
-| AP | Autopilot: flies to the destination and lands (move the stick or throttle to take over) |
+| AP | Autopilot: flies to the destination and lands (move the stick or throttle to take over); while taxiing, skips to the gate |
 | GEAR / FLAPS / BRAKE | Landing gear, flaps (up → 1 → full), wheel brakes (hold) |
 | CAM / DAY/NIGHT / II | Change camera, day or night, pause menu |
 | Drag the 3D view | Look around in the Orbit camera |
@@ -114,9 +129,12 @@ js/main.js              app bootstrap, worlds, state (menu/loading/running/pause
 js/core/                Renderer, Scene graph root, ClippingDemo
 js/airport/             SkyVision home airport: Runway (generic, also used for Mumbai), Taxiway, Terminal,
                         Tower, Hangar, Road + car park, Signs, Environment
-js/aircraft/            Aircraft (model + liveries), Liveries, Fleet (instanced parked aircraft),
+js/aircraft/            Aircraft (procedural A320/A350/A380), AircraftTypes (real dimensions + handling),
+                        LiveryTexture (painted fuselage texture), Liveries, Fleet (instanced parked aircraft),
                         FlightPath + FlightController (autopilot demo)
-js/flight/              FlightModel (physics), PlayerFlight (landing/crash logic), Missions, Effects, EngineSound
+js/flight/              FlightModel (physics), PlayerFlight (landing/crash logic), Autopilot, Taxi (taxi graph,
+                        Dijkstra, pure-pursuit steering), TaxiRoute (green route line), Missions, Effects,
+                        EngineSound (procedural Web Audio)
 js/world/               AirfieldData, Terrain + Scenery (SkyVision valley), Airfields, RunwayAids (PAPI, beacons),
                         SkyVisionWorld, WorldMap (minimap image)
 js/world/mumbai/        MumbaiData (loader, height/water/obstacle queries), MumbaiTerrain (terrain, sea, roads),

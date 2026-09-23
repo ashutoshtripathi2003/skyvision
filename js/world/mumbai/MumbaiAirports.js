@@ -8,6 +8,7 @@ import { asphaltTexture, concreteTexture, facadeTexture, buildingTexture } from 
 import { seededRandom } from '../../utils/MathUtils.js';
 import { createFleet } from '../../aircraft/Fleet.js';
 import { FLEET_MIX } from '../../aircraft/Liveries.js';
+import { AIRCRAFT_TYPES } from '../../aircraft/AircraftTypes.js';
 import { ribbon, ribbonGeometry, densify } from './MumbaiTerrain.js';
 
 // Builds CSMIA (Mumbai), Navi Mumbai and Juhu from real OpenStreetMap geometry:
@@ -83,8 +84,24 @@ export function createMumbaiAirports(data) {
     sock.position.y = airportAt(x, z).y;
     group.add(sock);
   });
-  group.add(createParkedFleet(json));
-  return { group, towerEyes };
+  const stands = describeStands(json);
+  group.add(createParkedFleet(stands));
+  return { group, towerEyes, stands };
+}
+
+// Stand list for the taxi-to-gate logic: how much room each stand has (distance
+// to the nearest neighbouring stand = the wingspan it can take) and whether it
+// is a "contact" stand at a jet bridge.
+function describeStands(json) {
+  const bridgeEnds = json.jetBridges.flatMap((f) => [[f[0], f[1]], [f[f.length - 2], f[f.length - 1]]]);
+  const count = {};
+  return json.stands.map((s, i) => ({
+    x: s.x, y: s.y, z: s.z, heading: s.heading, airport: s.airport,
+    name: s.ref || String((count[s.airport] = (count[s.airport] || 0) + 1)),
+    spacing: json.stands.reduce((best, o, j) => (j === i ? best : Math.min(best, Math.hypot(o.x - s.x, o.z - s.z))), Infinity),
+    contact: bridgeEnds.some(([x, z]) => Math.hypot(x - s.x, z - s.z) < 45),
+    occupied: false,
+  }));
 }
 
 function createAprons(json) {
@@ -323,8 +340,10 @@ function createApronLights(json) {
   return group;
 }
 
-// Parked airliners at the real stands, in Indian airline colours.
-function createParkedFleet(json) {
+// Parked airliners at the real stands, in Indian airline colours. The models are
+// real size (1 unit = 1 m), so the type is chosen by the room at each stand:
+// A320s anywhere, A350s (65 m span) and A380s (80 m span) only at wide stands.
+function createParkedFleet(stands) {
   const rand = seededRandom(2026);
   const occupancy = { BOM: 0.72, NMI: 0.5 };
   const pick = (mix) => {
@@ -334,19 +353,19 @@ function createParkedFleet(json) {
     return Object.keys(mix)[0];
   };
   const placements = [];
-  json.stands.forEach((s, i) => {
+  stands.forEach((s) => {
     const mix = FLEET_MIX[s.airport];
     if (!mix || rand() > occupancy[s.airport]) return;
-    const livery = pick(mix);
-    // Wide-bodies only where the neighbouring stands leave room for a ~46 m wingspan.
-    const spacing = json.stands.reduce((best, o, j) => (j === i ? best : Math.min(best, Math.hypot(o.x - s.x, o.z - s.z))), Infinity);
-    const wide = livery === 'airindia' && spacing > 58 && rand() < 0.5;
-    const scale = wide ? 1.95 : 1.4;
+    let livery = pick(mix);
+    let type = 'a320';
+    if (s.spacing > 82 && rand() < 0.35) { type = 'a380'; livery = 'skyvision'; }
+    else if (s.spacing > 62 && (livery === 'airindia' || rand() < 0.25)) { type = 'a350'; livery = 'airindia'; }
+    s.occupied = true;
     // The stand point is where the nose wheel stops; the aircraft origin (main gear) is behind it.
-    const back = 8.5 * scale;
+    const back = AIRCRAFT_TYPES[type].gear.nose.z + 1;
     placements.push({
       x: s.x - Math.sin(s.heading) * back, y: s.y, z: s.z - Math.cos(s.heading) * back,
-      heading: s.heading, scale, livery,
+      heading: s.heading, scale: 1, livery, type,
     });
   });
   return createFleet(placements);

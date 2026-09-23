@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Aircraft } from './Aircraft.js';
 
-// Parked aircraft drawn with instancing. For each livery one Aircraft is built,
+// Parked aircraft drawn with instancing. For each type + livery one Aircraft is built,
 // every mesh is "baked" into aircraft space (its world matrix applied to the
 // vertices) and merged into one geometry per material. Each parked copy is then
 // just one model matrix M = T * R * S in an InstancedMesh.
@@ -23,8 +23,8 @@ function flipWinding(geometry) {
   });
 }
 
-function bakeTemplate(livery) {
-  const plane = new Aircraft({ livery });
+function bakeTemplate(type, livery) {
+  const plane = new Aircraft({ type, livery });
   plane.root.updateMatrixWorld(true);
   const byMaterial = new Map();
   plane.root.traverse((o) => {
@@ -45,14 +45,15 @@ function bakeTemplate(livery) {
   return [...byMaterial].map(([material, list]) => ({ material, geometry: mergeGeometries(list, false) }));
 }
 
-// placements: [{ x, y, z, heading, scale, livery }]
+// placements: [{ x, y, z, heading, scale, livery, type }]  (type: a320 | a350 | a380)
 export function createFleet(placements) {
   const group = new THREE.Group();
   group.name = 'Parked fleet';
-  const byLivery = new Map();
+  const byTemplate = new Map();
   placements.forEach((p) => {
-    if (!byLivery.has(p.livery)) byLivery.set(p.livery, []);
-    byLivery.get(p.livery).push(p);
+    const key = `${p.type || 'a320'}|${p.livery}`;
+    if (!byTemplate.has(key)) byTemplate.set(key, { type: p.type || 'a320', livery: p.livery, list: [] });
+    byTemplate.get(key).list.push(p);
   });
 
   const matrix = new THREE.Matrix4();
@@ -61,8 +62,8 @@ export function createFleet(placements) {
   const scale = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
 
-  byLivery.forEach((list, livery) => {
-    bakeTemplate(livery).forEach(({ material, geometry }) => {
+  byTemplate.forEach(({ type, livery, list }) => {
+    bakeTemplate(type, livery).forEach(({ material, geometry }) => {
       const mesh = new THREE.InstancedMesh(geometry, material, list.length);
       list.forEach((p, i) => {
         position.set(p.x, p.y, p.z);

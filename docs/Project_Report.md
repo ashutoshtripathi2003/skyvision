@@ -31,6 +31,11 @@ elevation data for the terrain and coastline. Latitude/longitude are projected t
 polygons are triangulated and extruded into 3D. Thousands of objects are drawn efficiently with GPU
 instancing, including parked aircraft in Indian airline colour schemes at the real stands.
 
+The player can fly an Airbus A320, A350 or A380. Each is generated procedurally from its real dimensions,
+using lofted cross-sections, lathe-turned engines and a livery texture painted in code. After landing, the
+aircraft plans a route over the real taxiway network with Dijkstra's algorithm and taxis itself to a free
+gate. The sound is fully procedural and uses the Web Audio API.
+
 ## 2. Problem Statement
 
 Computer Graphics concepts such as transformations, projections, viewing and lighting are usually taught
@@ -41,7 +46,7 @@ can be pointed to in the source code.
 
 ## 3. Objectives
 
-1. Model a recognisable 3D airport and aircraft using only geometric primitives.
+1. Model a recognisable 3D airport and realistic airliners (A320, A350, A380) procedurally in code, without external model files.
 2. Apply translation, rotation, scaling and composite transformations to animate an aircraft and vehicles.
 3. Implement perspective and orthographic projection with multiple camera (viewing) modes.
 4. Implement a lighting model with a smooth day/night transition and night-time artificial lights.
@@ -122,7 +127,10 @@ offline.
 | `core/Scene.js` | Scene graph root and the `world` group |
 | `core/ClippingDemo.js` | User clipping plane (key K) |
 | `airport/*` | Static models: runway, taxiways/apron, terminal, tower, hangar, roads, signs, terrain |
-| `aircraft/Aircraft.js` | Hierarchical aircraft model, landing-gear retraction, aircraft lights |
+| `aircraft/Aircraft.js` | Procedural A320/A350/A380 model (lofted fuselage, wings, lathe nacelles, bogie gear), gear retraction, lights |
+| `aircraft/AircraftTypes.js`, `aircraft/LiveryTexture.js` | Real dimensions and handling per type; livery painted onto a canvas texture |
+| `flight/Taxi.js`, `flight/TaxiRoute.js` | Taxi graph + Dijkstra route to a free stand, pure-pursuit taxi steering, green route line |
+| `flight/EngineSound.js` | Procedural engine, wind, runway, reverser, touchdown and gear sounds (Web Audio API) |
 | `aircraft/FlightPath.js` | The ten flight phases as curves + timing + easing |
 | `aircraft/FlightController.js` | Converts time into position/heading/pitch/bank each frame |
 | `vehicles/*` | Vehicle models and their looping spline paths |
@@ -138,11 +146,11 @@ offline.
 |---|---|
 | **Translation** | Aircraft moves along its path (`FlightController.applyCurvePose`); vehicles (`VehicleManager.place`); repeated runway dashes, lights, trees (`Runway.js`, `Environment.js`) |
 | **Rotation** | Aircraft yaw/pitch/roll (`rotation.set(-pitch, heading, bank)`); landing gear folding (`Aircraft.setGearExtension`); rotating radar (`Tower.js`); ground plane rotated flat (`Environment.js`) |
-| **Scaling** | Nose cone = sphere scaled 1.9× along Z; hills = flattened spheres; gate aircraft scaled to 0.85; random tree sizes; terminal/hangar roofs flattened with non-uniform scale |
+| **Scaling** | Real-metre aircraft drawn at 1/1.4 in the valley; unit gear-strut cylinders stretched to leg length; belly fairing = non-uniformly scaled sphere; hills = flattened spheres; random tree sizes |
 | **Reflection** | Right wing and right stabiliser are the left ones mirrored with `scale.x = -1` |
 | **Composite transformation** | Every object's model matrix `M = T · R · S`; hierarchy: world matrix = parent world matrix × local matrix (aircraft root → wing wrapper → wing → wing-tip light) |
 | **Coordinate systems** | Local (model) space of each part, world space, camera (view) space, clip space, screen space; follow camera converts an offset from aircraft space to world space |
-| **3D modelling** | All objects are built from primitives: boxes, cylinders, cones, spheres, planes; wings/fins are 2D polygons **extruded** into 3D |
+| **3D modelling** | Airport objects from primitives (boxes, cylinders, cones, spheres, planes) and extrusion; aircraft fuselage from cross-section rings, wings/tail **lofted** through airfoil stations, engines by **surface of revolution** (`LatheGeometry`) |
 | **Perspective projection** | `PerspectiveCamera(55°, aspect, 0.5, 4000)` for Airport/Follow/Tower/Free views; tower camera changes FOV to zoom |
 | **Parallel (orthographic) projection** | `OrthographicCamera` for the Top view; zoom scales the view volume |
 | **Viewing transformation** | `camera.lookAt(target)` builds the view matrix; follow/tower cameras recompute it every frame |
@@ -153,7 +161,7 @@ offline.
 | **Lighting** | Hemisphere (ambient) + directional (sun/moon) + spot lights (floodlights, landing light) + point light (hangar); emissive materials for lamps |
 | **Shading** | Physically-based (Lambert diffuse + specular) per-pixel shading via `MeshStandardMaterial` |
 | **Shadows** | Shadow mapping from the sun's orthographic shadow camera |
-| **Texture mapping** | Procedural canvas textures (grass, asphalt, concrete, facade, signs, runway numbers) with UV repeat |
+| **Texture mapping** | Procedural canvas textures (grass, asphalt, concrete, facade, signs, runway numbers) with UV repeat; aircraft livery wrapped around the fuselage by its own (along, around) UVs, lit-window emissive map for night; scrolling chevron texture on the taxi route |
 | **Blending** | Additive blended sprites for light glow; transparent textures for runway numbers and windows |
 | **Fog / atmospheric perspective** | Linear fog blending distant objects into the horizon colour |
 | **Custom shader** | GLSL gradient sky with sun/moon disc (`lighting/Sky.js`) |
@@ -167,6 +175,7 @@ offline.
 | **Frustum culling by chunks** | City split into a 10 x 7 grid of instanced chunks so off-screen chunks are skipped |
 | **2D transformations** | HUD compass (translation), attitude indicator (rotation + translation), minimap (translate-rotate-scale of the world map) |
 | **Particle system** | Tyre smoke and crash explosion sprites with velocity, growth and fade (`flight/Effects.js`) |
+| **Graph search** | Taxiway network as a weighted graph; Dijkstra's shortest path to a free stand (`flight/Taxi.js`) |
 
 ## 10. Algorithms
 
@@ -331,7 +340,35 @@ final-approach distance, so the aircraft lands on whichever end is most straight
 every route (Mumbai to Navi Mumbai and back, and all SkyVision routes), the autopilot lands at
 140–200 ft/min on the centreline.
 
-### 10.13 GPU instancing
+### 10.13 Procedural airliner modelling
+
+```
+fuselage: for each section z_i:  ring of 40 vertices  (rx_i · sin θ,  cy_i + ry_i · cos θ,  z_i)
+          nose:  r = R · sqrt(1 − (1 − t)^2.3)          (blunt rounded nose)
+          tail:  top line nearly straight, belly rising  (upswept tail cone)
+          UV = ((z − tail) / length,  θ / 2π)            (livery texture coordinates)
+wing:     airfoil points (chord position, thickness) placed at each station:
+          P = leadingEdge + (0, t · chord · thickness / 2, −c · chord)
+          consecutive stations joined by two triangles per airfoil segment (loft)
+nacelle:  2D profile (radius, length) revolved about the engine axis (LatheGeometry)
+```
+
+The three types share this code and differ only in data: length, fuselage radius, wing stations,
+winglet shape, engine positions (4 on the A380), gear bogies and window decks.
+
+### 10.14 Taxi to the gate
+
+```
+graph:      nodes = taxiway centreline points (shared points = junctions), edge weight = segment length
+exit:       first taxiway node on the runway ahead of the aircraft
+Dijkstra:   dist[exit] = 0; repeatedly take the closest unvisited node u and relax each edge (u, v):
+            if dist[u] + w < dist[v] then dist[v] = dist[u] + w, prev[v] = u
+stand:      minimise dist[entry(stand)] (+ penalty if no jet bridge); only free stands wide enough
+steering:   target = point 10–30 m further along the route (pure pursuit); steer ∝ heading error
+speed:      11 m/s straight, 4.5–7 m/s before turns, v = sqrt(2 · a · remaining) to stop on the mark
+```
+
+### 10.15 GPU instancing
 
 ```
 for each copy i:  M_i = T(position_i) · R_y(heading_i) · S(width_i, height_i, depth_i)
@@ -349,9 +386,11 @@ into aircraft space and merged per material, then instanced once per airline.
    (box + flattened half-cylinder roof + jet bridges); tower (stacked cylinders, octagonal glass cab,
    rotating radar); hangar (half-cylinder arch on walls); roads, car park with parked cars; signs, windsock,
    trees and hills.
-3. **Aircraft modelling:** fuselage cylinder, scaled-sphere nose, cone tail, extruded wing/stabiliser/fin
-   shapes (mirrored for the right side), engines, retractable gear, navigation/beacon/strobe lights and a
-   landing spotlight.
+3. **Aircraft modelling:** A320, A350 and A380 from real dimensions: lofted fuselage (upswept tail, double
+   deck on the A380), lofted wings with sharklets / curved tips / fences, stabilisers and fin (mirrored for
+   the right side), lathe-turned nacelles with fan, spinner and exhaust cone, 2/4/6-wheel bogie gear that
+   retracts, a livery canvas texture with windows, doors, cheatline and titles (lit windows at night),
+   navigation/beacon/strobe lights and a landing spotlight.
 4. **Flight animation:** ten phases described as data in `FlightPath.js`; `FlightController.js` evaluates
    the current curve and writes position and orientation.
 5. **Vehicles:** bus, fuel truck and baggage tug with two carts; closed Catmull-Rom loops; carts follow at a
@@ -365,7 +404,9 @@ into aircraft space and merged per material, then instanced once per airline.
 9. **Extras for demonstration:** clipping plane (K), wireframe (F), animation speed (+/−), screenshot (O).
 10. **Fly Yourself:** flight model, autopilot with automatic landing (P), missions, touchdown scoring and crash rules, flight assist, five flight
     cameras (chase, cockpit, orbit, tower, map), canvas instruments (compass, attitude indicator, minimap),
-    PAPI lights, target beacon, procedural engine sound, tyre smoke and explosion particles.
+    PAPI lights, target beacon, procedural sound (engine spool, wind, runway rumble, reversers, touchdown
+    chirp and thud, gear), camera shake on touchdown, tyre smoke and explosion particles, automatic reverse
+    thrust and an automatic taxi to a free gate along the real taxiways.
 11. **SkyVision valley:** fractal-noise terrain with a lake, instanced forests and a town, and two extra
     airfields with approach corridors cut through the hills.
 12. **Mumbai region:** data build tool, real terrain and coastline, sea, 5,350 major roads (bridges raised
@@ -412,6 +453,9 @@ Press **O** inside the simulation to save a PNG, then insert the images here:
 - No external 3D model or image files are used; every object and texture is generated in code.
 - Fly Yourself: scripted test flights land at every runway end with 4–5★ when flown with good technique;
   hard, misaligned or off-runway landings are scored down or end in a crash.
+- Autopilot test flights with all three types (A320, A350, A380) on Mumbai → Navi Mumbai and back, and on
+  every valley route, land at 5★ (50–200 ft/min on the centreline). Each then taxis to a free gate and stops
+  within 1 m of the stand mark. Takeoff rolls are about 1.1 km (A320), 1.45 km (A350) and 1.75 km (A380).
 - Mumbai region: builds in a few seconds from about 2.4 MB of pre-processed data. It has 5 runways at 3
   airports (09/27 and 14/32 crossing at CSMIA), 503 taxiways, 179 stands and about 126,000 buildings.
 
@@ -428,8 +472,9 @@ Press **O** inside the simulation to save a PNG, then insert the images here:
 - The autopilot demo follows predefined curves, and the Fly Yourself flight model is simplified (no wind,
   weight, engine failure or real aerodynamic coefficients).
 - Vehicles follow fixed loops and do not detect collisions; the player's aircraft does not collide with
-  parked aircraft.
-- Models are stylised primitives, not detailed meshes. The Mumbai terminals are extruded footprints with
+  parked aircraft, and the automatic taxi may cut corners slightly on tight turns.
+- The aircraft are procedural models: the proportions are right, but there are no detailed meshes or
+  photo textures. The airport models are stylised primitives. The Mumbai terminals are extruded footprints with
   flat roofs, and city buildings are boxes from OpenStreetMap bounding boxes (heights are estimated where
   the map has none).
 - The Mumbai data is only as complete as OpenStreetMap: missing aprons are filled with generated stand pads,

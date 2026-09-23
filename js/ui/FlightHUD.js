@@ -95,7 +95,9 @@ export class FlightHUD {
       this.text('fh-target', `FREE FLIGHT · nearest: ${nav.nearest.airport.name} ${(nav.nearest.distance / 1000).toFixed(1)} km`);
     }
 
-    const ap = flight.autopilot.status();
+    const ap = flight.status === 'TAXI'
+      ? `AUTO TAXI · STAND ${flight.taxi.stand.name.toUpperCase()} · ${Math.round(flight.taxi.remaining)} m · ${Math.round(m.speed * 1.944)} kt`
+      : flight.autopilot.status();
     this.text('fh-ap', ap);
     this.flag('fh-ap', 'hidden', !ap);
 
