@@ -1,5 +1,7 @@
 # SkyVision — Interactive 3D Airport Visualization
 
+**Live demo: https://skyvision-neon.vercel.app** (runs in any modern browser; Chrome or Edge recommended)
+
 A Computer Graphics minor project built with **WebGL + Three.js**. It has three parts:
 
 1. **Autopilot demo:** a small fictional airport where an airliner taxis, takes off, flies a circuit, lands
