@@ -1,0 +1,16 @@
+{
+  "name": "skyvision",
+  "version": "0.1.0",
+  "description": "SkyVision - Interactive 3D Airport Visualization (CG minor project)",
+  "type": "module",
+  "scripts": {
+    "dev": "http-server -p 5173 -c-1"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "pngjs": "^7.0.0"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  }
+}

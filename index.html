@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SkyVision - Interactive 3D Airport Visualization</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+    { "imports": { "three": "./assets/vendor/three/three.module.js", "three/addons/": "./assets/vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <canvas id="scene-canvas"></canvas>
+
+  <!-- Main menu -->
+  <section id="menu" class="overlay">
+    <div class="menu-card">
+      <div class="brand-mark">&#9992;</div>
+      <h1>SKYVISION</h1>
+      <p class="subtitle">Interactive 3D Airport Visualization</p>
+      <div class="menu-buttons">
+        <button id="btn-fly" class="primary">FLY YOURSELF</button>
+        <button id="btn-start">AUTOPILOT DEMO</button>
+        <button id="btn-controls">CONTROLS</button>
+        <button id="btn-exit">EXIT</button>
+      </div>
+      <p class="footer">Computer Graphics Minor Project &middot; WebGL / Three.js</p>
+    </div>
+  </section>
+
+  <!-- Mission select -->
+  <section id="missions" class="overlay hidden">
+    <div class="menu-card xwide">
+      <h2>CHOOSE YOUR FLIGHT</h2>
+      <p class="subtitle">Take off, navigate by the compass and minimap, and land wherever you choose.</p>
+      <p class="section-label">YOUR AIRLINE</p>
+      <div id="airline-list" class="airline-row"></div>
+      <p class="section-label">MUMBAI REGION &middot; REAL MAP DATA</p>
+      <div id="mission-list-mumbai" class="mission-grid"></div>
+      <p class="section-label">SKYVISION VALLEY &middot; TRAINING WORLD</p>
+      <div id="mission-list-skyvision" class="mission-grid"></div>
+      <p class="fine-print">Airline colour schemes are simplified approximations for an educational, non-commercial project; no affiliation with any airline.</p>
+      <button id="btn-missions-back">BACK</button>
+    </div>
+  </section>
+
+  <!-- Loading (Mumbai is built on first use) -->
+  <section id="loading" class="overlay hidden">
+    <div class="menu-card">
+      <h2>PREPARING MUMBAI</h2>
+      <div class="loader" aria-hidden="true"></div>
+      <p class="subtitle" id="loading-step" role="status">Loading map data</p>
+      <p class="footer">Map data &copy; OpenStreetMap contributors &middot; Elevation: AWS Terrain Tiles</p>
+    </div>
+  </section>
+
+  <!-- Landing report -->
+  <section id="results" class="overlay hidden">
+    <div class="menu-card wide">
+      <p class="eyebrow" id="results-status">LANDED</p>
+      <h2 id="results-title">LAKEVIEW REGIONAL</h2>
+      <div id="results-stars" class="stars" aria-label="Landing rating"></div>
+      <p class="subtitle" id="results-verdict">Smooth landing</p>
+      <div class="table-wrap"><table id="results-table"></table></div>
+      <p class="section-label">FLY ON FROM HERE</p>
+      <div id="results-next" class="menu-buttons"></div>
+      <div class="menu-buttons row">
+        <button id="btn-results-missions">MISSIONS</button>
+        <button id="btn-results-menu">MAIN MENU</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Crash -->
+  <section id="crash" class="overlay hidden">
+    <div class="menu-card">
+      <p class="eyebrow danger">CRASHED</p>
+      <h2 id="crash-reason">Touchdown far too hard</h2>
+      <p class="subtitle" id="crash-detail"></p>
+      <div class="menu-buttons">
+        <button id="btn-crash-retry" class="primary">RETRY</button>
+        <button id="btn-crash-missions">MISSIONS</button>
+        <button id="btn-crash-menu">MAIN MENU</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Controls help -->
+  <section id="controls" class="overlay hidden">
+    <div class="menu-card wide">
+      <h2>CONTROLS</h2>
+      <p class="section-label">FLY YOURSELF</p>
+      <div class="table-wrap">
+        <table>
+          <tr><td><kbd>SHIFT</kbd> / <kbd>Z</kbd></td><td>Throttle up / down (hold)</td></tr>
+          <tr><td><kbd>S</kbd> / <kbd>W</kbd> or <kbd>&darr;</kbd> / <kbd>&uarr;</kbd></td><td>Nose up / nose down (<kbd>I</kbd> inverts)</td></tr>
+          <tr><td><kbd>A</kbd> / <kbd>D</kbd> or <kbd>&larr;</kbd> / <kbd>&rarr;</kbd></td><td>Roll left / right (steer on the ground)</td></tr>
+          <tr><td><kbd>Q</kbd> / <kbd>E</kbd></td><td>Rudder left / right</td></tr>
+          <tr><td><kbd>G</kbd></td><td>Landing gear up / down</td></tr>
+          <tr><td><kbd>V</kbd></td><td>Flaps: up &rarr; 1 &rarr; full</td></tr>
+          <tr><td><kbd>B</kbd> or <kbd>SPACE</kbd></td><td>Wheel brakes (hold)</td></tr>
+          <tr><td><kbd>C</kbd> or <kbd>1</kbd>-<kbd>5</kbd></td><td>Camera: Chase, Cockpit, Orbit (drag), Tower, Map</td></tr>
+          <tr><td><kbd>P</kbd></td><td>Autopilot on / off: flies to the destination and lands automatically (any flight key takes over)</td></tr>
+          <tr><td><kbd>T</kbd></td><td>Flight assist on / off (off = full aerobatics)</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Restart the flight</td></tr>
+          <tr><td><kbd>M</kbd></td><td>Mute engine sound</td></tr>
+        </table>
+      </div>
+      <p class="section-label">AUTOPILOT DEMO</p>
+      <div class="table-wrap">
+        <table>
+          <tr><td><kbd>SPACE</kbd></td><td>Start / pause / resume the flight</td></tr>
+          <tr><td><kbd>C</kbd> or <kbd>1</kbd>-<kbd>5</kbd></td><td>Camera: Top, Airport, Follow, Tower, Free</td></tr>
+          <tr><td><kbd>R</kbd></td><td>Reset aircraft to the hangar</td></tr>
+          <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> <kbd>Q</kbd><kbd>E</kbd> + drag</td><td>Free camera (hold <kbd>Shift</kbd> = fast)</td></tr>
+          <tr><td><kbd>+</kbd> <kbd>-</kbd></td><td>Animation speed 0.5x - 4x</td></tr>
+        </table>
+      </div>
+      <p class="section-label">BOTH MODES</p>
+      <div class="table-wrap">
+        <table>
+          <tr><td><kbd>N</kbd></td><td>Day / night</td></tr>
+          <tr><td>Mouse wheel</td><td>Zoom / camera distance</td></tr>
+          <tr><td><kbd>K</kbd></td><td>Clipping-plane demonstration</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Wireframe view</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Show / hide HUD</td></tr>
+          <tr><td><kbd>O</kbd></td><td>Save a screenshot (PNG)</td></tr>
+          <tr><td><kbd>ESC</kbd></td><td>Pause menu</td></tr>
+        </table>
+      </div>
+      <button id="btn-controls-close" class="primary">BACK</button>
+    </div>
+  </section>
+
+  <!-- Pause menu -->
+  <section id="pause" class="overlay hidden">
+    <div class="menu-card">
+      <h2>PAUSED</h2>
+      <div class="menu-buttons">
+        <button id="btn-resume" class="primary">RESUME</button>
+        <button id="btn-restart">RESTART FLIGHT</button>
+        <button id="btn-pause-controls">CONTROLS</button>
+        <button id="btn-main-menu">MAIN MENU</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Exit screen -->
+  <section id="exit" class="overlay hidden">
+    <div class="menu-card">
+      <h2>THANK YOU FOR FLYING SKYVISION</h2>
+      <p class="subtitle">You can now close this tab.</p>
+      <div class="menu-buttons"><button id="btn-back" class="primary">BACK TO MENU</button></div>
+    </div>
+  </section>
+
+  <!-- Autopilot demo HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-panel hud-left">
+      <div class="hud-title">SKYVISION</div>
+      <div><span>CAMERA</span><b id="hud-camera">AIRPORT</b></div>
+      <div><span>MODE</span><b id="hud-mode">DAY</b></div>
+      <div><span>FLIGHT</span><b id="hud-flight">READY</b></div>
+      <div><span>PHASE</span><b id="hud-step">1/10</b></div>
+      <div><span>ANIMATION</span><b id="hud-anim">READY</b></div>
+      <div><span>SPEED</span><b id="hud-speed">1x</b></div>
+      <div id="hud-clip-row" class="hidden"><span>CLIPPING</span><b>ON</b></div>
+    </div>
+    <div class="hud-panel hud-right">
+      <div><span>ALT</span><b id="hud-alt">0 m</b></div>
+      <div><span>SPD</span><b id="hud-spd">0 kt</b></div>
+      <div><span>HDG</span><b id="hud-hdg">270&deg;</b></div>
+      <div class="progress"><div id="hud-progress"></div></div>
+    </div>
+    <div id="hud-prompt">Press SPACE to start the flight</div>
+    <div class="hud-hints">
+      <span><kbd>SPACE</kbd> Start/Pause</span>
+      <span><kbd>C</kbd> Camera</span>
+      <span><kbd>N</kbd> Day/Night</span>
+      <span><kbd>R</kbd> Reset</span>
+      <span><kbd>K</kbd> Clip</span>
+      <span><kbd>F</kbd> Wireframe</span>
+      <span><kbd>ESC</kbd> Menu</span>
+    </div>
+  </div>
+
+  <!-- Fly Yourself HUD -->
+  <div id="flight-hud" class="hidden">
+    <div class="fh-top">
+      <canvas id="fh-compass" width="440" height="42"></canvas>
+      <div id="fh-target" class="fh-target"></div>
+      <div id="fh-ap" class="fh-ap hidden"></div>
+    </div>
+
+    <div class="hud-panel fh-data">
+      <div class="hud-title" id="fh-mission">FREE FLIGHT</div>
+      <div class="fh-speed"><b id="fh-speed">0</b><span>KT</span></div>
+      <div><span>THROTTLE</span><b id="fh-throttle-text">0%</b></div>
+      <div class="bar"><div id="fh-throttle-bar"></div></div>
+      <div><span>FLAPS</span><b id="fh-flaps">1</b></div>
+      <div><span>GEAR</span><b id="fh-gear" class="good">DOWN</b></div>
+      <div><span>BRAKES</span><b id="fh-brake">OFF</b></div>
+      <div><span>ASSIST</span><b id="fh-assist" class="good">ON</b></div>
+      <div class="fh-sep"></div>
+      <div><span>TIME</span><b id="fh-time">0:00</b></div>
+      <div><span>CAMERA</span><b id="fh-camera">CHASE</b></div>
+      <div><span>MODE</span><b id="fh-mode">DAY</b></div>
+    </div>
+
+    <div class="fh-right">
+      <canvas id="fh-map" width="190" height="190"></canvas>
+      <div class="hud-panel fh-alt">
+        <div><span>ALT</span><b id="fh-alt">0 m</b></div>
+        <div><span>AGL</span><b id="fh-agl">0 m</b></div>
+        <div><span>V/S</span><b id="fh-vs">0 fpm</b></div>
+        <div><span>HDG</span><b id="fh-hdg">000&deg;</b></div>
+      </div>
+    </div>
+
+    <canvas id="fh-attitude" width="150" height="150"></canvas>
+    <div id="fh-warning" class="fh-warning hidden"></div>
+    <div id="fh-attribution" class="fh-attribution"></div>
+    <div id="fh-hint" class="fh-hint"></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
