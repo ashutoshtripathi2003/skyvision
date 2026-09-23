@@ -31,7 +31,7 @@ export class HUD {
     this.fields[name].textContent = value;
   }
 
-  update({ camera, night, flight, simSpeed, clipping }) {
+  update({ camera, night, flight, simSpeed, clipping, touch = false }) {
     const root = flight.aircraft.root;
     this.set('camera', camera);
     this.set('mode', night ? 'NIGHT' : 'DAY');
@@ -46,9 +46,10 @@ export class HUD {
     const pct = flight.status === 'COMPLETE' ? 100 : ((flight.phase.step - 1) / 10) * 100;
     this.fields.progress.style.width = `${pct}%`;
     this.fields.prompt.classList.toggle('hidden', flight.status !== 'READY' && flight.status !== 'COMPLETE');
+    const start = touch ? 'tap ▶' : 'press SPACE';
     this.set('prompt', flight.status === 'COMPLETE'
-      ? 'Flight complete — press SPACE to fly again'
-      : 'Press SPACE to start the flight');
+      ? `Flight complete — ${start} to fly again`
+      : `${touch ? 'Tap ▶' : 'Press SPACE'} to start the flight`);
     this.fields.clip.classList.toggle('hidden', !clipping);
   }
 

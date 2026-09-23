@@ -29,7 +29,7 @@ export class Autopilot {
   // Returns a message for the HUD; refuses on the ground.
   engage() {
     const m = this.model;
-    if (m.onGround || m.agl < 20 * this.world.aircraftScale) return { ok: false, message: 'TAKE OFF FIRST, THEN PRESS P FOR AUTOPILOT' };
+    if (m.onGround || m.agl < 20 * this.world.aircraftScale) return { ok: false, message: 'TAKE OFF FIRST, THEN ENGAGE THE AUTOPILOT' };
     this.engaged = true;
     this.hold = { heading: m.heading, altitude: Math.max(m.position.y, this.world.heightAt(m.position.x, m.position.z) + 150), speed: Math.max(m.speed, m.stallSpeed * 1.4) };
     const target = this.flight.target;
@@ -63,7 +63,13 @@ export class Autopilot {
         const ip = fromRunwayLocal(runway, 0, sign * (runway.length / 2 + interceptDistance));
         const toIp = Math.atan2(ip.x - m.position.x, ip.z - m.position.z);
         const turn = Math.abs(wrapAngle(toIp - course));
-        const cost = Math.hypot(ip.x - m.position.x, ip.z - m.position.z) + turn * faf;
+        let cost = Math.hypot(ip.x - m.position.x, ip.z - m.position.z) + turn * faf;
+        // Already lined up on this runway's final approach? Then keep it.
+        const local = toRunwayLocal(runway, m.position.x, m.position.z);
+        const along = sign * local.z;
+        const established = along > runway.length / 2 && along < runway.length / 2 + interceptDistance + 2000
+          && Math.abs(local.x) < 600 * this.world.aircraftScale && Math.abs(wrapAngle(m.heading - course)) < 0.5;
+        if (established) cost = along - runway.length;
         if (!best || cost < best.cost) {
           best = {
             cost, runway, sign, course, intercept: ip, interceptDistance,

@@ -76,6 +76,25 @@ descent just above the runway, close the throttle, then brake.
 | `O` | Save a PNG screenshot |
 | `ESC` | Pause menu |
 
+## Playing on a phone or tablet
+
+Open **https://skyvision-neon.vercel.app** on your phone and hold it in **landscape**. On-screen controls
+appear automatically:
+
+| Control | Action |
+|---|---|
+| Left stick | Drag down = nose up, up = nose down, sideways = roll / steer on the ground |
+| THR slider (right) | Slide up for more power, down for less |
+| AP | Autopilot: flies to the destination and lands (move the stick or throttle to take over) |
+| GEAR / FLAPS / BRAKE | Landing gear, flaps (up → 1 → full), wheel brakes (hold) |
+| CAM / DAY/NIGHT / II | Change camera, day or night, pause menu |
+| Drag the 3D view | Look around in the Orbit camera |
+
+- **Android (Chrome):** tapping a mission goes fullscreen and locks the screen to landscape.
+- **iPhone (Safari):** websites can't lock the orientation, so SkyVision shows "rotate your phone" in portrait.
+- **App-like mode:** use the browser's **Add to Home Screen**. SkyVision then opens fullscreen in landscape,
+  with its own icon.
+
 ## Rebuilding the Mumbai data (optional)
 
 The data in `assets/data/` is already built. To rebuild it (needs internet, takes a few minutes):

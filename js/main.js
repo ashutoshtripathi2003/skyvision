@@ -12,15 +12,16 @@ import { Effects } from './flight/Effects.js';
 import { EngineSound } from './flight/EngineSound.js';
 import { loadMumbaiWorld } from './world/mumbai/MumbaiWorld.js';
 import { InputManager } from './input/InputManager.js';
+import { TouchControls, IS_TOUCH } from './input/TouchControls.js';
 import { Menu } from './ui/Menu.js';
 import { HUD } from './ui/HUD.js';
 import { FlightHUD } from './ui/FlightHUD.js';
 
 // ---------- Build the application ----------
 const canvas = document.getElementById('scene-canvas');
-const renderer = createRenderer(canvas);
+const renderer = createRenderer(canvas, { maxPixelRatio: IS_TOUCH ? 1.5 : 2 });
 const { scene, world, skyVision } = createScene();
-const lighting = new LightingManager(scene);
+const lighting = new LightingManager(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
 
 const aircraft = new Aircraft({ livery: 'skyvision', withLights: true });
 world.add(aircraft.root);
@@ -63,11 +64,13 @@ const menu = new Menu({
 
 player.on('message', (text) => hud.toast(text.toUpperCase()));
 player.on('landed', (report) => {
+  touch.setMode('none');
   state = 'report';
   input.enabled = false;
   setTimeout(() => menu.showResults(report, activeWorld.airports), 700);
 });
 player.on('crashed', (info) => {
+  touch.setMode('none');
   state = 'report';
   input.enabled = false;
   setTimeout(() => menu.showCrash(info), 2300);
@@ -91,17 +94,20 @@ function enterRunning() {
 }
 
 function startDemo() {
+  TouchControls.enterLandscape();
   appMode = 'demo';
   leaveFlight();
   activateWorld(skyVision);
   enterRunning();
   hud.setVisible(true);
   flightHud.setVisible(false);
+  touch.setMode('demo');
   demoFlight.reset();
   cameras.useModeSet(CAMERA_MODES, 'AIRPORT');
 }
 
 async function startFlight(mission) {
+  TouchControls.enterLandscape();
   if (mission.world === 'mumbai' && !mumbai) {
     state = 'loading';
     input.enabled = false;
@@ -125,6 +131,7 @@ async function startFlight(mission) {
   enterRunning();
   hud.setVisible(false);
   flightHud.setVisible(true);
+  touch.setMode('flight');
   if (!FLIGHT_CAMERA_MODES.includes(cameras.mode)) cameras.useModeSet(FLIGHT_CAMERA_MODES, 'CHASE');
   else cameras.setMode(cameras.mode);
   player.start(activeWorld, mission);
@@ -142,6 +149,7 @@ function leaveFlight() {
 }
 
 function pause() {
+  touch.setMode('none');
   state = 'paused';
   input.enabled = false;
   sound.stop();
@@ -150,11 +158,13 @@ function pause() {
 }
 
 function resume() {
+  touch.setMode(appMode === 'flight' ? 'flight' : 'demo');
   enterRunning();
   if (appMode === 'flight') sound.start();
 }
 
 function goToMainMenu() {
+  touch.setMode('none');
   state = 'menu';
   input.enabled = false;
   hud.setVisible(false);
@@ -167,37 +177,58 @@ function goToMainMenu() {
   menu.show('menu');
 }
 
-// ---------- Keyboard bindings ----------
+// ---------- Actions (shared by the keyboard and the on-screen touch buttons) ----------
 input.enabled = false;
 const inFlight = () => appMode === 'flight';
 
-input.onKey('Space', () => {
-  if (inFlight()) return; // SPACE is the wheel brake in Fly Yourself (read as a held key)
-  demoFlight.toggle();
-  hud.toast(`FLIGHT ${demoFlight.status}`);
-});
-input.onKey('KeyC', () => { cameras.cycle(); hud.toast(`CAMERA: ${cameras.mode}`); });
+const actions = {
+  demoToggle() {
+    if (inFlight()) return;
+    demoFlight.toggle();
+    hud.toast(`FLIGHT ${demoFlight.status}`);
+  },
+  camera() { cameras.cycle(); hud.toast(`CAMERA: ${cameras.mode}`); },
+  night() { lighting.toggleDayNight(); hud.toast(lighting.isNight ? 'NIGHT MODE' : 'DAY MODE'); },
+  reset() {
+    if (inFlight()) { startFlight(lastFlight); hud.toast('FLIGHT RESTARTED'); return; }
+    demoFlight.reset();
+    hud.toast('AIRCRAFT RESET');
+  },
+  gear() {
+    if (!inFlight()) return;
+    player.model.toggleGear();
+    hud.toast(player.model.gearDown ? 'GEAR DOWN' : 'GEAR UP');
+  },
+  flaps() {
+    if (!inFlight()) return;
+    const m = player.model;
+    m.cycleFlaps(m.flaps === 2 ? -2 : 1);
+    hud.toast(`FLAPS ${['UP', '1', 'FULL'][m.flaps]}`);
+  },
+  autopilot() {
+    if (!inFlight()) return;
+    const message = player.toggleAutopilot();
+    if (message) hud.toast(message);
+  },
+  pause() {
+    if (menu.controlsOpen) menu.show(menu.returnTo);
+    else if (state === 'running') pause();
+    else if (state === 'paused') resume();
+  },
+};
+const touch = new TouchControls(actions);
+
+input.onKey('Space', actions.demoToggle); // in Fly Yourself SPACE is the wheel brake (read as a held key)
+input.onKey('KeyC', actions.camera);
 [0, 1, 2, 3, 4].forEach((i) => input.onKey(`Digit${i + 1}`, () => {
   cameras.selectIndex(i);
   hud.toast(`CAMERA: ${cameras.mode}`);
 }));
-input.onKey('KeyN', () => { lighting.toggleDayNight(); hud.toast(lighting.isNight ? 'NIGHT MODE' : 'DAY MODE'); });
-input.onKey('KeyR', () => {
-  if (inFlight()) { startFlight(lastFlight); hud.toast('FLIGHT RESTARTED'); return; }
-  demoFlight.reset();
-  hud.toast('AIRCRAFT RESET');
-});
-input.onKey('KeyG', () => {
-  if (!inFlight()) return;
-  player.model.toggleGear();
-  hud.toast(player.model.gearDown ? 'GEAR DOWN' : 'GEAR UP');
-});
-input.onKey('KeyV', () => {
-  if (!inFlight()) return;
-  const m = player.model;
-  m.cycleFlaps(m.flaps === 2 ? -2 : 1);
-  hud.toast(`FLAPS ${['UP', '1', 'FULL'][m.flaps]}`);
-});
+input.onKey('KeyN', actions.night);
+input.onKey('KeyR', actions.reset);
+input.onKey('KeyG', actions.gear);
+input.onKey('KeyV', actions.flaps);
+input.onKey('KeyP', actions.autopilot);
 input.onKey('KeyI', () => {
   if (!inFlight()) return;
   player.invertPitch = !player.invertPitch;
@@ -219,18 +250,9 @@ input.onKey('KeyH', () => {
   if (inFlight()) { flightHud.toggleUserHidden(); flightHud.setVisible(true); } else hud.toggleUserHidden();
 });
 input.onKey('KeyO', saveScreenshot);
-input.onKey('KeyP', () => {
-  if (!inFlight()) return;
-  const message = player.toggleAutopilot();
-  if (message) hud.toast(message);
-});
 ['Equal', 'NumpadAdd'].forEach((code) => input.onKey(code, () => changeSpeed(1)));
 ['Minus', 'NumpadSubtract'].forEach((code) => input.onKey(code, () => changeSpeed(-1)));
-input.onKey('Escape', () => {
-  if (menu.controlsOpen) menu.show(menu.returnTo);
-  else if (state === 'running') pause();
-  else if (state === 'paused') resume();
-});
+input.onKey('Escape', actions.pause);
 input.onWheel((delta) => cameras.zoom(delta));
 
 function changeSpeed(direction) {
@@ -285,7 +307,8 @@ function frame() {
   const paused = state === 'paused' || state === 'loading';
 
   if (appMode === 'flight') {
-    if (!paused) player.update(dt, input);
+    if (!paused) player.update(dt, input, touch.enabled && state === 'running' ? touch.controls : null);
+    touch.update(player);
     lighting.setShadowFocus(aircraft.root.position);
   } else if (state === 'running') {
     demoFlight.update(dt * SPEEDS[speedIndex]);
@@ -305,11 +328,11 @@ function frame() {
 
   if (state !== 'menu' && state !== 'loading') {
     if (appMode === 'flight') {
-      flightHud.update({ flight: player, camera: cameras.mode, night: lighting.isNight, muted: sound.muted });
+      flightHud.update({ flight: player, camera: cameras.mode, night: lighting.isNight, muted: sound.muted, touch: IS_TOUCH });
     } else {
       hud.update({
         camera: cameras.mode, night: lighting.isNight, flight: demoFlight,
-        simSpeed: SPEEDS[speedIndex], clipping: clipping.enabled,
+        simSpeed: SPEEDS[speedIndex], clipping: clipping.enabled, touch: IS_TOUCH,
       });
     }
   }

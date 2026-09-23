@@ -22,7 +22,7 @@ const NIGHT = {
 };
 
 export class LightingManager {
-  constructor(scene) {
+  constructor(scene, { shadowMapSize = 2048 } = {}) {
     this.scene = scene;
     this.night = 0;       // current blend value
     this.targetNight = 0; // 0 = DAY, 1 = NIGHT
@@ -38,7 +38,7 @@ export class LightingManager {
     const cam = this.sun.shadow.camera; // orthographic volume that "sees" shadow casters
     cam.left = -230; cam.right = 230; cam.top = 230; cam.bottom = -230;
     cam.near = 10; cam.far = 700;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     this.sun.shadow.bias = -0.0005;
     this.sun.shadow.normalBias = 0.4;
     this.sun.target.position.copy(SHADOW_CENTER);

@@ -2,8 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>SkyVision - Interactive 3D Airport Visualization</title>
+  <meta name="theme-color" content="#05080d" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SkyVision" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="assets/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png" />
   <link rel="stylesheet" href="css/style.css" />
   <script type="importmap">
     { "imports": { "three": "./assets/vendor/three/three.module.js", "three/addons/": "./assets/vendor/three/addons/" } }
@@ -89,6 +97,19 @@
   <section id="controls" class="overlay hidden">
     <div class="menu-card wide">
       <h2>CONTROLS</h2>
+      <div class="touch-only">
+        <p class="section-label">ON A PHONE OR TABLET</p>
+        <div class="table-wrap">
+          <table>
+            <tr><td>Left stick</td><td>Drag down = nose up, up = nose down, sideways = roll / steer</td></tr>
+            <tr><td>THR slider</td><td>Slide up for more power, down for less</td></tr>
+            <tr><td>AP</td><td>Autopilot: flies to the destination and lands (move the stick or throttle to take over)</td></tr>
+            <tr><td>GEAR / FLAPS / BRAKE</td><td>Landing gear, flaps (up &rarr; 1 &rarr; full), wheel brakes (hold)</td></tr>
+            <tr><td>CAM / DAY/NIGHT / II</td><td>Change camera, day or night, pause menu</td></tr>
+            <tr><td>Drag the view</td><td>Look around in the Orbit camera</td></tr>
+          </table>
+        </div>
+      </div>
       <p class="section-label">FLY YOURSELF</p>
       <div class="table-wrap">
         <table>
@@ -221,6 +242,44 @@
     <div id="fh-warning" class="fh-warning hidden"></div>
     <div id="fh-attribution" class="fh-attribution"></div>
     <div id="fh-hint" class="fh-hint"></div>
+  </div>
+
+  <!-- Phone / tablet controls (shown only on touch screens) -->
+  <div id="touch-controls" data-mode="none">
+    <div class="tc-flight">
+      <div id="tc-stick" class="tc-stick" aria-label="Flight stick: drag to pitch and roll">
+        <div class="tc-stick-cross"></div>
+        <div id="tc-knob" class="tc-knob"></div>
+      </div>
+      <div class="tc-right">
+        <div class="tc-buttons">
+          <button id="tc-ap" data-action="autopilot">AP</button>
+          <button id="tc-gear" data-action="gear">GEAR DN</button>
+          <button id="tc-flaps" data-action="flaps">FLAPS 1</button>
+          <button id="tc-brake" class="tc-brake" data-action="brake">BRAKE</button>
+          <button data-action="camera">CAM</button>
+          <button data-action="night">DAY/NIGHT</button>
+        </div>
+        <div id="tc-throttle" class="tc-throttle" aria-label="Throttle: slide up for more power">
+          <div id="tc-throttle-fill" class="tc-throttle-fill"></div>
+          <span id="tc-throttle-label" class="tc-throttle-label">0%</span>
+          <span class="tc-throttle-title">THR</span>
+        </div>
+      </div>
+    </div>
+    <div class="tc-demo">
+      <button data-action="demoToggle" class="primary">&#9654; START / PAUSE</button>
+      <button data-action="camera">CAMERA</button>
+      <button data-action="night">DAY/NIGHT</button>
+      <button data-action="reset">RESET</button>
+    </div>
+    <button class="tc-pause" data-action="pause" aria-label="Pause menu">II</button>
+  </div>
+
+  <!-- Portrait phones: ask for landscape -->
+  <div id="rotate">
+    <div class="rotate-phone" aria-hidden="true"></div>
+    <p>Rotate your phone to landscape to fly</p>
   </div>
 
   <div id="toast"></div>

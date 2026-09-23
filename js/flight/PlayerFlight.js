@@ -29,7 +29,7 @@ export class PlayerFlight {
 
   // P key: engage / disengage the autopilot. Returns the message to show.
   toggleAutopilot() {
-    if (this.status !== 'FLYING') return this.status === 'GROUND' ? 'TAKE OFF FIRST, THEN PRESS P FOR AUTOPILOT' : '';
+    if (this.status !== 'FLYING') return this.status === 'GROUND' ? 'TAKE OFF FIRST, THEN ENGAGE THE AUTOPILOT' : '';
     if (this.autopilot.engaged) { this.autopilot.disengage(); return 'AUTOPILOT OFF'; }
     return this.autopilot.engage().message;
   }
@@ -44,6 +44,7 @@ export class PlayerFlight {
     const label = mission.start === 'final' ? mission.arrive : mission.depart;
     const spawn = spawnFor(world, mission.from, label, mission.start);
     this.model.reset({ ...spawn, position: new THREE.Vector3(spawn.position.x, spawn.position.y, spawn.position.z) });
+    this.model.agl = spawn.position.y - world.heightAt(spawn.position.x, spawn.position.z);
     this.status = spawn.airborne ? 'FLYING' : 'GROUND';
     this.touchdown = null;
     this.time = 0;
@@ -67,25 +68,36 @@ export class PlayerFlight {
     return this.world.airports.find((a) => a.id === id);
   }
 
-  readControls(input) {
+  // Keyboard and (on phones) the on-screen joystick / throttle / brake are combined.
+  readControls(input, touch = null) {
     const k = (code) => input.isDown(code);
     let pitch = (k('KeyS') || k('ArrowDown') ? 1 : 0) - (k('KeyW') || k('ArrowUp') ? 1 : 0);
+    let roll = (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0);
+    let throttle = (k('ShiftLeft') || k('ShiftRight') ? 1 : 0) - (k('KeyZ') ? 1 : 0);
+    let brake = k('KeyB') || k('Space');
+    if (touch) {
+      pitch += touch.pitch;
+      roll += touch.roll;
+      // The slider sets a target; the throttle lever moves towards it.
+      if (touch.throttleTarget !== null) throttle = Math.max(-1, Math.min(1, (touch.throttleTarget - this.model.throttle) * 6));
+      brake = brake || touch.brake;
+    }
     if (this.invertPitch) pitch = -pitch;
     return {
-      pitch,
-      roll: (k('KeyD') || k('ArrowRight') ? 1 : 0) - (k('KeyA') || k('ArrowLeft') ? 1 : 0),
+      pitch: Math.max(-1, Math.min(1, pitch)),
+      roll: Math.max(-1, Math.min(1, roll)),
       yaw: (k('KeyE') ? 1 : 0) - (k('KeyQ') ? 1 : 0),
-      throttle: (k('ShiftLeft') || k('ShiftRight') ? 1 : 0) - (k('KeyZ') ? 1 : 0),
-      brake: k('KeyB') || k('Space'),
+      throttle,
+      brake,
     };
   }
 
-  update(dt, input) {
+  update(dt, input, touch = null) {
     if (!this.mission || this.status === 'CRASHED' || this.status === 'LANDED') {
       this.sound.update(0, 0);
       return;
     }
-    let controls = this.readControls(input);
+    let controls = this.readControls(input, touch);
     if (this.autopilot.engaged) {
       // Any flight control input hands the aircraft back to the pilot.
       const manual = controls.pitch || controls.roll || controls.yaw || controls.throttle || controls.brake;
@@ -268,22 +280,24 @@ export class PlayerFlight {
     return list;
   }
 
-  hint() {
+  // touchMode: phrase the hints for the on-screen controls instead of keys.
+  hint(touchMode = false) {
     const m = this.model;
+    const t = (keys, touch) => (touchMode ? touch : keys);
     const scale = this.world.navScale;
     if (this.status === 'GROUND') {
-      if (m.throttle < 0.6 && m.speed < m.stallSpeed * 0.7) return 'Hold SHIFT to open the throttle for takeoff';
-      if (m.speed > m.stallSpeed * 1.1) return 'ROTATE: hold S (or ↓) to lift the nose';
-      return 'Keep straight with A / D';
+      if (m.throttle < 0.6 && m.speed < m.stallSpeed * 0.7) return t('Hold SHIFT to open the throttle for takeoff', 'Slide the throttle (right) up to full for takeoff');
+      if (m.speed > m.stallSpeed * 1.1) return t('ROTATE: hold S (or ↓) to lift the nose', 'ROTATE: pull the stick down to lift the nose');
+      return t('Keep straight with A / D', 'Keep straight with the stick');
     }
-    if (this.status === 'ROLLOUT') return 'Hold B or SPACE to brake to a stop';
+    if (this.status === 'ROLLOUT') return t('Hold B or SPACE to brake to a stop', 'Hold BRAKE to stop');
     if (this.status !== 'FLYING') return '';
-    if (this.autopilot.engaged) return 'Autopilot flying · touch any flight key to take over';
-    if (m.gearDown && m.agl > 60 * Math.sqrt(scale) && m.verticalSpeed > 1 && this.time < 90 * Math.sqrt(scale)) return 'Positive climb: press G to raise the gear';
+    if (this.autopilot.engaged) return t('Autopilot flying · touch any flight key to take over', 'Autopilot flying · move the stick or throttle to take over');
+    if (m.gearDown && m.agl > 60 * Math.sqrt(scale) && m.verticalSpeed > 1 && this.time < 90 * Math.sqrt(scale)) return t('Positive climb: press G to raise the gear', 'Positive climb: tap GEAR to raise it');
     const nav = this.navigation();
-    if (nav.target && nav.distance < 3000 * scale && !m.gearDown) return 'Approaching: lower the gear (G) and flaps (V)';
+    if (nav.target && nav.distance < 3000 * scale && !m.gearDown) return t('Approaching: lower the gear (G) and flaps (V)', 'Approaching: tap GEAR and FLAPS');
     if (nav.target && nav.distance < 2600 * scale) return 'Line up with a runway. PAPI: 2 white + 2 red = on the glide path';
-    if (nav.target) return `Press P for autopilot + autoland, or fly to ${nav.target.short} yourself (cyan marker on the compass)`;
+    if (nav.target) return t(`Press P for autopilot + autoland, or fly to ${nav.target.short} yourself (cyan marker on the compass)`, `Tap AP for autopilot + autoland, or fly to ${nav.target.short} yourself`);
     return 'Free flight: land at any airport';
   }
 }

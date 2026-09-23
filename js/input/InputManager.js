@@ -18,13 +18,27 @@ export class InputManager {
     window.addEventListener('keyup', (e) => this.down.delete(e.code));
     window.addEventListener('blur', () => this.down.clear());
 
-    canvas.addEventListener('mousedown', () => { this.mouse.dragging = true; });
-    window.addEventListener('mouseup', () => { this.mouse.dragging = false; });
-    window.addEventListener('mousemove', (e) => {
-      if (!this.mouse.dragging) return;
-      this.mouse.dx += e.movementX;
-      this.mouse.dy += e.movementY;
+    // Dragging on the 3D view (mouse or finger) turns the orbit / free camera.
+    let dragPointer = null;
+    let last = null;
+    canvas.addEventListener('pointerdown', (e) => {
+      dragPointer = e.pointerId;
+      last = { x: e.clientX, y: e.clientY };
+      this.mouse.dragging = true;
     });
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== dragPointer) return;
+      this.mouse.dx += e.clientX - last.x;
+      this.mouse.dy += e.clientY - last.y;
+      last = { x: e.clientX, y: e.clientY };
+    });
+    const endDrag = (e) => {
+      if (e.pointerId !== dragPointer) return;
+      dragPointer = null;
+      this.mouse.dragging = false;
+    };
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       if (this.enabled && this.wheelHandler) this.wheelHandler(e.deltaY);

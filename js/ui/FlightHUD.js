@@ -58,7 +58,7 @@ export class FlightHUD {
     $(id).classList.toggle(className, on);
   }
 
-  update({ flight, camera, night, muted }) {
+  update({ flight, camera, night, muted, touch = false }) {
     if (this.root.classList.contains('hidden')) return;
     const m = flight.model;
     const nav = flight.navigation();
@@ -102,7 +102,7 @@ export class FlightHUD {
     const warnings = flight.warnings();
     this.text('fh-warning', warnings.join('  ·  '));
     this.flag('fh-warning', 'hidden', warnings.length === 0);
-    this.text('fh-hint', flight.hint());
+    this.text('fh-hint', flight.hint(touch));
 
     if (!this.canvases) this.resize();
     this.drawCompass(compass, nav.target ? nav.bearing : null);
