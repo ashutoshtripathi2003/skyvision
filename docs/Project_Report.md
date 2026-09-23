@@ -368,16 +368,16 @@ into aircraft space and merged per material, then instanced once per airline.
     PAPI lights, target beacon, procedural engine sound, tyre smoke and explosion particles.
 11. **SkyVision valley:** fractal-noise terrain with a lake, instanced forests and a town, and two extra
     airfields with approach corridors cut through the hills.
-13. **Phones and tablets:** detected with the `(pointer: coarse)` media query. On-screen virtual joystick,
-    throttle slider and AP / gear / flaps / brake / camera / day-night / pause buttons (Pointer Events, so
-    one code path handles touch and mouse), a compact HUD, a rotate prompt in portrait, fullscreen and
-    landscape lock on Android, a web app manifest (installable, opens fullscreen in landscape), and a lower
-    render resolution and shadow-map size for mobile GPUs.
 12. **Mumbai region:** data build tool, real terrain and coastline, sea, 5,350 major roads (bridges raised
     above the water), 126k instanced buildings with lit windows at night, CSMIA / Navi Mumbai / Juhu with
     real runways, taxiways, aprons, terminals, hangars and jet bridges, auto-placed control towers, apron
     floodlights, and an instanced parked fleet in Indian airline colour schemes (IndiGo, Air India, Akasa Air,
     SpiceJet, Air India Express), selectable for your own aircraft.
+13. **Phones and tablets:** detected with the `(pointer: coarse)` media query. On-screen virtual joystick,
+    throttle slider and AP / gear / flaps / brake / camera / day-night / pause buttons (Pointer Events, so
+    one code path handles touch and mouse), a compact HUD, a rotate prompt in portrait, fullscreen and
+    landscape lock on Android, a web app manifest (installable, opens fullscreen in landscape), and a lower
+    render resolution and shadow-map size for mobile GPUs.
 
 ## 12. Screenshots
 
