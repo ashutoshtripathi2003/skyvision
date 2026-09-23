@@ -224,3 +224,10 @@ Each runway is built along its own local axis and then rotated to its real headi
 **Q. Are the airline liveries official?**
 No. They are simplified colour schemes (tail, engines, cheatline and the airline name) inspired by Indian
 airlines, used for an educational, non-commercial project. No logos are reproduced.
+
+**Q. Can it run on a phone? How do the touch controls work?**
+Yes. It's a website (deployed on Vercel), so it runs in the phone's browser using the phone's GPU through
+WebGL. On a touch screen an on-screen joystick appears. The finger's offset from the joystick centre,
+divided by the ring radius, gives a value from −1 to 1 for pitch and roll, the same inputs the keyboard
+produces. A throttle slider sets the power, and buttons trigger the autopilot, gear, flaps and brakes. To
+keep the frame rate up on phones we render at a lower pixel ratio and use a smaller shadow map.
