@@ -282,6 +282,50 @@ thrust per kilogram, so they accelerate more slowly. They also need a higher spe
 (liftoff ≈ 1.2 × stall speed). The measured takeoff rolls are about 1.1 km (A320), 1.45 km (A350) and 1.75 km
 (A380), all shorter than Mumbai's 2.9 km and 3.5 km runways.
 
+**Q. How does the taxi guidance work when I taxi myself?**
+After landing, Dijkstra's algorithm finds the shortest route over the taxiway graph to a free gate, and it is
+drawn as a green ribbon. Its chevron texture scrolls, which is texture animation. Each frame the aircraft's
+position is projected onto the route polyline, which gives the distance still to go and the next corner. The
+turn direction comes from the sign of the change in heading. If you are more than about 45 m off the line
+for a few seconds, a new route is planned from where you are. Parking is detected when you stop with the
+nose wheel within about 3 m of a free gate's stop mark, lined up with it.
+
+**Q. How is the full-screen map made?**
+The map is a 2D viewing transformation: screen = (world − centre) × scale + screen centre, with north up.
+Panning changes the centre, and zooming changes the scale about the point under the cursor. The background is
+a "satellite photo": the whole region rendered once from straight above with an **orthographic camera**
+into an off-screen render target, then read back into a 2D canvas. Runways, taxiways, gates, traffic, the
+trail and the route are drawn on top as vector graphics.
+
+**Q. How are the other airports (Bengaluru, Chennai, Goa) built?**
+With the same data pipeline as Mumbai: OpenStreetMap for the airport (runways, taxiways, aprons, gates,
+terminals), roads and buildings, and elevation tiles for the terrain, projected onto a flat local grid in
+metres. Each airport is a separate region file, loaded on demand; only one region is kept in memory at a
+time, and the old one's GPU buffers are freed (dispose). Terrain is coloured by height above the region's
+own base level, so the Bengaluru plateau (915 m) looks green, not rocky.
+
+**Q. How is the water animated?**
+With a normal map: a tiling texture of wave slopes made in code from a sum of sine waves. The shader reads
+it twice at different scales and scroll directions, so the waves never repeat visibly. The per-pixel normals
+bend the reflection of the sky (environment map) and the sun's highlight, so the sea glitters.
+
+**Q. How are the clouds drawn?**
+Each cloud is a cluster of soft "puff" sprites. All puffs are one instanced draw call. The vertex shader
+turns every quad towards the camera, using the camera's right and up vectors from the view matrix
+(billboarding), and moves it with the wind. The clouds fade out with distance (fog) and when you fly through
+one.
+
+**Q. What is bloom?**
+A post-processing effect. The scene is rendered to an off-screen HDR image, the pixels brighter than a
+threshold are blurred at several sizes, and the result is added back. Bright lights then glow the way they
+do in a camera. It is used at night on computers.
+
+**Q. How do the AI aircraft move?**
+They are not animations. Each one has its own flight model and autopilot, the same code the player uses.
+Arrivals start on final, autoland, then taxi to a free gate with the pure-pursuit taxi controller.
+Departures take off at full power and climb away. They are stepped at a fixed 30 Hz, and they avoid the
+runway the player is using.
+
 **Q. Can it run on a phone? How do the touch controls work?**
 Yes. It's a website (deployed on Vercel), so it runs in the phone's browser using the phone's GPU through
 WebGL. On a touch screen an on-screen joystick appears. The finger's offset from the joystick centre,

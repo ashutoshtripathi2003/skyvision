@@ -7,6 +7,7 @@ import { createWorldMap } from './WorldMap.js';
 import { TOWER } from '../airport/Tower.js';
 import { TRAINER } from '../flight/FlightModel.js';
 import { TaxiGraph } from '../flight/Taxi.js';
+import { createClouds } from './Clouds.js';
 import { TAXI_NETWORK, STANDS } from '../airport/Taxiway.js';
 
 // The fictional SkyVision valley (home airport + Lakeview + Summit) described
@@ -25,6 +26,7 @@ export function createSkyVisionWorld(group, aids) {
   });
 
   const half = TERRAIN_SIZE / 2.3;
+  group.add(createClouds({ minX: -half, maxX: half, minZ: -half, maxZ: half }, { count: 40, base: 950, top: 1800 }));
   const map = createWorldMap({ minX: -half, maxX: half, minZ: -half, maxZ: half }, 256, (x, z) => {
     const h = heightAt(x, z);
     if (h < WATER_LEVEL) return [60, 140, 200];

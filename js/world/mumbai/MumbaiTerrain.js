@@ -3,6 +3,7 @@ import { detailTexture } from '../../utils/Textures.js';
 import { registerEmissive } from '../../lighting/LightRegistry.js';
 import { clamp } from '../../utils/MathUtils.js';
 import { SEA_LEVEL } from './MumbaiData.js';
+import { createWaterMaterial } from '../Water.js';
 
 // Terrain mesh from the real elevation grid, the sea, and the major road network.
 const MESH_STEP = 2; // use every 2nd grid sample for the mesh (120 m), full grid for collision
@@ -48,8 +49,9 @@ export function groundColor(data, coverage, x, z, h, target = new THREE.Color())
   if (inAirport) return target.copy(COLORS.airportGrass);
   const urban = clamp(coverage.at(x, z) * 3.2, 0, 1);
   target.copy(COLORS.grass);
-  if (h > 35) target.lerp(COLORS.forest, clamp((h - 35) / 60, 0, 1));
-  if (h > 260) target.lerp(COLORS.rock, clamp((h - 260) / 120, 0, 1));
+  const rel = h - (data.baseHeight || 0); // height above the region's base level
+  if (rel > 35) target.lerp(COLORS.forest, clamp((rel - 35) / 60, 0, 1));
+  if (rel > 260) target.lerp(COLORS.rock, clamp((rel - 260) / 120, 0, 1));
   if (h < 4 && urban < 0.15 && data.isWater(x + 150, z) + data.isWater(x - 150, z) + data.isWater(x, z + 150) + data.isWater(x, z - 150) > 0) {
     target.lerp(COLORS.mangrove, 0.85); // low ground next to water: mangroves line Mumbai's creeks
   }
@@ -96,9 +98,10 @@ export function createMumbaiTerrain(data, coverage) {
 
   // The sea: one large plane at sea level; the terrain dips below it offshore.
   const b = data.bounds;
+  const seaSize = b.maxX - b.minX + 60000;
   const sea = new THREE.Mesh(
-    new THREE.PlaneGeometry(b.maxX - b.minX + 60000, b.maxZ - b.minZ + 60000),
-    new THREE.MeshStandardMaterial({ color: 0x2a6a80, roughness: 0.12, metalness: 0.3 }),
+    new THREE.PlaneGeometry(seaSize, b.maxZ - b.minZ + 60000),
+    createWaterMaterial({ color: 0x0c3446, waveLength: 140, extent: seaSize }),
   );
   sea.rotation.x = -Math.PI / 2;
   sea.position.set((b.minX + b.maxX) / 2, SEA_LEVEL - 0.1, (b.minZ + b.maxZ) / 2);

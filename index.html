@@ -47,6 +47,8 @@
       <div id="type-list" class="type-row"></div>
       <p class="section-label">MUMBAI REGION &middot; REAL MAP DATA</p>
       <div id="mission-list-mumbai" class="mission-grid"></div>
+      <p class="section-label">INDIA &middot; MORE REAL AIRPORTS</p>
+      <div id="airport-list" class="airport-grid"></div>
       <p class="section-label">SKYVISION VALLEY &middot; TRAINING WORLD</p>
       <div id="mission-list-skyvision" class="mission-grid"></div>
       <p class="fine-print">Airline colour schemes are simplified approximations for an educational, non-commercial project; no affiliation with any airline.</p>
@@ -126,7 +128,8 @@
           <tr><td><kbd>P</kbd></td><td>Autopilot on / off: flies to the destination and lands automatically (any flight key takes over)</td></tr>
           <tr><td><kbd>T</kbd></td><td>Flight assist on / off (off = full aerobatics)</td></tr>
           <tr><td><kbd>R</kbd></td><td>Restart the flight</td></tr>
-          <tr><td><kbd>M</kbd></td><td>Mute engine sound</td></tr>
+          <tr><td><kbd>M</kbd></td><td>Full-screen map (click an airport to fly there)</td></tr>
+          <tr><td><kbd>U</kbd></td><td>Mute sound</td></tr>
         </table>
       </div>
       <p class="section-label">AUTOPILOT DEMO</p>
@@ -231,7 +234,8 @@
     </div>
 
     <div class="fh-right">
-      <canvas id="fh-map" width="190" height="190"></canvas>
+      <canvas id="fh-map" width="190" height="190" title="Open the map (M)"></canvas>
+      <button id="fh-map-button" class="fh-map-button">MAP (M)</button>
       <div class="hud-panel fh-alt">
         <div><span>ALT</span><b id="fh-alt">0 m</b></div>
         <div><span>AGL</span><b id="fh-agl">0 m</b></div>
@@ -244,6 +248,20 @@
     <div id="fh-warning" class="fh-warning hidden"></div>
     <div id="fh-attribution" class="fh-attribution"></div>
     <div id="fh-hint" class="fh-hint"></div>
+  </div>
+
+  <!-- Full-screen map -->
+  <div id="map-view" class="hidden">
+    <canvas id="mv-canvas"></canvas>
+    <div class="mv-top"><b>MAP</b><span id="mv-info"></span></div>
+    <div class="mv-buttons">
+      <button id="mv-zoom-in" aria-label="Zoom in">+</button>
+      <button id="mv-zoom-out" aria-label="Zoom out">&minus;</button>
+      <button id="mv-centre">AIRCRAFT</button>
+      <button id="mv-fit">WHOLE MAP</button>
+      <button id="mv-close" class="primary">CLOSE</button>
+    </div>
+    <div class="mv-help">Drag to move &middot; wheel or pinch to zoom &middot; click an airport to fly there &middot; green dots = free gates</div>
   </div>
 
   <!-- Phone / tablet controls (shown only on touch screens) -->
@@ -261,6 +279,7 @@
           <button id="tc-brake" class="tc-brake" data-action="brake">BRAKE</button>
           <button data-action="camera">CAM</button>
           <button data-action="night">DAY/NIGHT</button>
+          <button data-action="map">MAP</button>
         </div>
         <div id="tc-throttle" class="tc-throttle" aria-label="Throttle: slide up for more power">
           <div id="tc-throttle-fill" class="tc-throttle-fill"></div>

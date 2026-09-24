@@ -2,29 +2,34 @@ import * as THREE from 'three';
 import { createRenderer } from './core/Renderer.js';
 import { createScene } from './core/Scene.js';
 import { ClippingDemo } from './core/ClippingDemo.js';
+import { PostFX } from './core/PostFX.js';
 import { LightingManager } from './lighting/LightingManager.js';
 import { CameraManager, CAMERA_MODES, FLIGHT_CAMERA_MODES } from './camera/CameraManager.js';
 import { Aircraft } from './aircraft/Aircraft.js';
 import { setEnvironment } from './aircraft/ModelLibrary.js';
+import { setSkyEnvironment } from './lighting/Environment.js';
 import { FlightController } from './aircraft/FlightController.js';
 import { VehicleManager } from './vehicles/VehicleManager.js';
 import { PlayerFlight } from './flight/PlayerFlight.js';
 import { Effects } from './flight/Effects.js';
 import { EngineSound } from './flight/EngineSound.js';
 import { TaxiRouteView } from './flight/TaxiRoute.js';
-import { loadMumbaiWorld } from './world/mumbai/MumbaiWorld.js';
+import { loadRegionWorld } from './world/mumbai/MumbaiWorld.js';
 import { InputManager } from './input/InputManager.js';
 import { TouchControls, IS_TOUCH } from './input/TouchControls.js';
 import { Menu } from './ui/Menu.js';
 import { HUD } from './ui/HUD.js';
 import { FlightHUD } from './ui/FlightHUD.js';
+import { MapView } from './ui/MapView.js';
 
 // ---------- Build the application ----------
 const canvas = document.getElementById('scene-canvas');
 const renderer = createRenderer(canvas, { maxPixelRatio: IS_TOUCH ? 1.5 : 2 });
 const { scene, world, skyVision } = createScene();
 const lighting = new LightingManager(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
-setEnvironment(createSkyEnvironment(renderer));
+const skyEnvironment = createSkyEnvironment(renderer);
+setEnvironment(skyEnvironment);
+setSkyEnvironment(skyEnvironment);
 
 // Real-size A320 model (metres); the SkyVision valley is drawn at 1/1.4 of real size.
 const VALLEY_SCALE = 1 / 1.4;
@@ -40,9 +45,19 @@ const taxiRoute = new TaxiRouteView(world);
 
 const cameras = new CameraManager(window.innerWidth / window.innerHeight);
 const clipping = new ClippingDemo(renderer, scene, world);
+const postfx = new PostFX(renderer, scene, cameras.camera, { enabled: !IS_TOUCH }); // bloom at night (desktop)
 const input = new InputManager(canvas);
 const hud = new HUD();
 const flightHud = new FlightHUD();
+const mapView = new MapView({
+  satellite: (w) => renderSatelliteMap(w),
+  onSelectAirport: (id) => {
+    if (appMode !== 'flight') return;
+    player.setTarget(id);
+    const a = activeWorld.airports.find((x) => x.id === id);
+    hud.toast(`DESTINATION: ${(a.short || a.name).toUpperCase()}${player.autopilot.engaged ? ' · AUTOPILOT RE-PLANNED' : ''}`);
+  },
+});
 
 const SPEEDS = [0.5, 1, 2, 4];
 let speedIndex = 1;
@@ -50,7 +65,7 @@ let appMode = 'demo'; // demo | flight
 let state = 'menu';   // menu | loading | running | paused | report
 let wireframe = false;
 let lastFlight = null; // mission object, so RESTART can repeat it
-let mumbai = null;     // built the first time a Mumbai mission is chosen
+let region = null;     // the real-world region currently loaded (one at a time)
 let activeWorld = skyVision;
 
 const menu = new Menu({
@@ -71,7 +86,7 @@ const menu = new Menu({
 
 player.on('message', (text) => hud.toast(text.toUpperCase()));
 player.on('route', (route) => {
-  if (route) taxiRoute.show(route, activeWorld.heightAt, 3.2 * Math.sqrt(player.size));
+  if (route) taxiRoute.show(route, activeWorld.heightAt, 3.2 * Math.sqrt(player.size), player.taxiOptions ? player.taxiOptions.noseOffset : 0);
   else taxiRoute.hide();
 });
 player.on('landed', (report) => {
@@ -91,7 +106,7 @@ player.on('crashed', (info) => {
 function activateWorld(target) {
   activeWorld = target;
   world.visible = target === skyVision;
-  if (mumbai) mumbai.group.visible = target === mumbai;
+  if (region) region.group.visible = target === region;
   target.group.add(aircraft.root);
   taxiRoute.setParent(target.group);
   scene.fog.near = target.fog.near;
@@ -120,26 +135,29 @@ function startDemo() {
 
 async function startFlight(mission) {
   TouchControls.enterLandscape();
-  if (mission.world === 'mumbai' && !mumbai) {
+  if (mission.world !== 'skyvision' && (!region || region.id !== mission.world)) {
     state = 'loading';
     input.enabled = false;
     menu.showLoading('Loading map data');
     try {
-      mumbai = await loadMumbaiWorld((step) => menu.setLoadingStep(step));
-      mumbai.group.visible = false;
-      scene.add(mumbai.group);
+      const next = await loadRegionWorld(mission.world, (step) => menu.setLoadingStep(step));
+      next.group.visible = false;
+      scene.add(next.group);
+      const previous = region;
+      region = next;
+      if (previous) { activateWorld(skyVision); disposeWorld(previous); }
     } catch (err) {
       console.error(err);
       state = 'menu';
       menu.show('missions');
-      hud.toast('COULD NOT LOAD MUMBAI DATA');
+      hud.toast('COULD NOT LOAD THE MAP DATA');
       return;
     }
   }
   appMode = 'flight';
   lastFlight = mission;
-  activateWorld(mission.world === 'mumbai' ? mumbai : skyVision);
-  if (mission.world === 'mumbai') mission = { ...mission, aircraftType: menu.aircraftType };
+  activateWorld(mission.world === 'skyvision' ? skyVision : region);
+  if (mission.world !== 'skyvision') mission = { ...mission, aircraftType: menu.aircraftType };
   // Swap in the chosen aircraft and wait (on the loading screen) until its
   // detailed model has loaded and been painted in the airline's colours.
   const type = activeWorld.aircraftTypes ? mission.aircraftType || 'a320' : 'a320';
@@ -161,6 +179,7 @@ async function startFlight(mission) {
 }
 
 function leaveFlight() {
+  mapView.close();
   player.mission = null;
   sound.stop();
   effects.clear();
@@ -174,6 +193,7 @@ function leaveFlight() {
 }
 
 function pause() {
+  mapView.close();
   touch.setMode('none');
   state = 'paused';
   input.enabled = false;
@@ -235,7 +255,12 @@ const actions = {
     const message = player.toggleAutopilot();
     if (message) hud.toast(message);
   },
+  map() {
+    if (!inFlight() || state !== 'running') return;
+    mapView.toggle(activeWorld, player);
+  },
   pause() {
+    if (mapView.isOpen) { mapView.close(); return; }
     if (menu.controlsOpen) menu.show(menu.returnTo);
     else if (state === 'running') pause();
     else if (state === 'paused') resume();
@@ -264,7 +289,10 @@ input.onKey('KeyT', () => {
   player.model.assist = !player.model.assist;
   hud.toast(player.model.assist ? 'FLIGHT ASSIST ON' : 'FLIGHT ASSIST OFF: FULL AEROBATICS');
 });
-input.onKey('KeyM', () => hud.toast(sound.toggleMute() ? 'SOUND MUTED' : 'SOUND ON'));
+input.onKey('KeyM', actions.map);
+input.onKey('KeyU', () => hud.toast(sound.toggleMute() ? 'SOUND MUTED' : 'SOUND ON'));
+document.getElementById('fh-map').addEventListener('click', actions.map);
+document.getElementById('fh-map-button').addEventListener('click', actions.map);
 input.onKey('KeyK', () => {
   if (activeWorld !== skyVision) { hud.toast('CLIPPING DEMO: SKYVISION WORLD ONLY'); return; }
   clipping.toggle();
@@ -308,6 +336,7 @@ function saveScreenshot() {
 
 window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight);
+  postfx.setSize(window.innerWidth, window.innerHeight);
   cameras.setAspect(window.innerWidth / window.innerHeight);
   flightHud.resize();
 });
@@ -349,8 +378,9 @@ function frame() {
   cameras.update(dt, input, aircraft, {
     towerEye: nearestTowerEye(), shake: effects.shake, scale: appMode === 'flight' ? player.size : 1,
   });
-  if (activeWorld.update) activeWorld.update(dt, cameras.camera.position);
+  if (activeWorld.update && !paused) activeWorld.update(dt, cameras.camera.position, { player, elapsed, night: lighting.night });
   clipping.update(elapsed);
+  mapView.update();
   lighting.sky.follow(cameras.camera);
 
   if (state !== 'menu' && state !== 'loading') {
@@ -364,7 +394,7 @@ function frame() {
     }
   }
 
-  renderer.render(scene, cameras.camera);
+  postfx.render(scene, cameras.camera, lighting.night);
 }
 
 frame();
@@ -388,4 +418,65 @@ function createSkyEnvironment(webglRenderer) {
   const texture = pmrem.fromScene(envScene, 0.02).texture;
   pmrem.dispose();
   return texture;
+}
+
+// Free the GPU memory of a region we are leaving (its geometry, materials and
+// textures). The detailed aircraft models are shared, so they are skipped.
+function disposeWorld(world) {
+  scene.remove(world.group);
+  const skip = new Set(['a320', 'a350', 'a380']);
+  const visit = (o) => {
+    if (skip.has(o.name)) return;
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
+        Object.values(m).forEach((v) => { if (v && v.isTexture) v.dispose(); });
+        m.dispose();
+      });
+    }
+    o.children.forEach(visit);
+  };
+  visit(world.group);
+}
+
+// A "satellite photo" for the map: the whole region rendered once from straight
+// above with an orthographic camera into an off-screen render target, then read
+// back into a 2D canvas (clouds, sky, fog and aircraft hidden meanwhile).
+function renderSatelliteMap(w) {
+  const m = w.map;
+  const width = m.maxX - m.minX;
+  const depth = m.maxZ - m.minZ;
+  const px = IS_TOUCH ? 1280 : 2048;
+  const pz = Math.round((px * depth) / width);
+  const cam = new THREE.OrthographicCamera(-width / 2, width / 2, depth / 2, -depth / 2, 10, 20000);
+  cam.position.set((m.minX + m.maxX) / 2, 9000, (m.minZ + m.maxZ) / 2);
+  cam.up.set(0, 0, -1); // north (-Z) at the top of the image
+  cam.lookAt(cam.position.x, 0, cam.position.z);
+  cam.updateProjectionMatrix();
+  const hidden = [];
+  const hide = (o) => { if (o && o.visible) { o.visible = false; hidden.push(o); } };
+  w.group.traverse((o) => { if (o.name === 'Clouds') hide(o); });
+  hide(lighting.sky.group);
+  hide(aircraft.root);
+  const fog = scene.fog;
+  scene.fog = null;
+  const target = new THREE.WebGLRenderTarget(px, pz, { samples: 4, colorSpace: THREE.SRGBColorSpace });
+  renderer.setRenderTarget(target);
+  renderer.render(scene, cam);
+  const pixels = new Uint8Array(px * pz * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, px, pz, pixels);
+  renderer.setRenderTarget(null);
+  target.dispose();
+  scene.fog = fog;
+  hidden.forEach((o) => { o.visible = true; });
+  const canvas = document.createElement('canvas');
+  canvas.width = px;
+  canvas.height = pz;
+  const ctx = canvas.getContext('2d');
+  const image = ctx.createImageData(px, pz);
+  for (let y = 0; y < pz; y++) { // WebGL rows start at the bottom: flip vertically
+    image.data.set(pixels.subarray((pz - 1 - y) * px * 4, (pz - y) * px * 4), y * px * 4);
+  }
+  ctx.putImageData(image, 0, 0);
+  return { canvas, minX: m.minX, maxX: m.maxX, minZ: m.minZ, maxZ: m.maxZ };
 }

@@ -384,7 +384,19 @@ repaint (browser):      colour(texel) = sideView[side](P.z, P.y) x shade(origina
 LOD (every 0.5 s):      nearest N parked aircraft -> detailed clone; its instance matrix -> scale 0
 ```
 
-### 10.16 GPU instancing
+### 10.16 Map, water, clouds, bloom and traffic
+
+```
+map view:     screen = (world - centre) * scale + screenCentre      (north up; zoom about the cursor)
+satellite:    orthographic camera above the region -> render target -> readRenderTargetPixels -> 2D canvas
+water:        n = normalize(TBN * (N1(uv + v1 t) + N2(0.37 uv + v2 t)))   two scrolling normal-map layers
+clouds:       worldPos = centre(t) + (cameraRight * x + cameraUp * y) * size   (billboards, 1 draw call)
+bloom:        scene -> HDR target -> bright-pass (threshold) -> multi-scale blur -> add -> tone map
+AI traffic:   FlightModel + Autopilot per aircraft (fixed 30 Hz steps); taxi = Dijkstra + pure pursuit
+manual taxi:  progress = projection of the aircraft on the route polyline; replan if cross-track > 45 m
+```
+
+### 10.17 GPU instancing
 
 ```
 for each copy i:  M_i = T(position_i) · R_y(heading_i) · S(width_i, height_i, depth_i)
@@ -418,7 +430,11 @@ into aircraft space and merged per material, then instanced once per airline.
 8. **UI:** main menu, controls screen, pause menu, exit screen, HUD with camera/mode/flight
    phase/animation status and telemetry, toast messages.
 9. **Extras for demonstration:** clipping plane (K), wireframe (F), animation speed (+/−), screenshot (O).
-10. **Fly Yourself:** flight model, autopilot with automatic landing (P), missions, touchdown scoring and crash rules, flight assist, five flight
+10. **More airports, map and life:** Bengaluru, Chennai and Goa built from real data
+    (loaded on demand, one region in memory at a time); a full-screen zoomable map with a top-down render;
+    manual taxi with route guidance and parking detection; AI arrivals and departures; animated water,
+    clouds, per-floor building windows with rooftop tanks, and night bloom.
+11. **Fly Yourself:** flight model, autopilot with automatic landing (P), missions, touchdown scoring and crash rules, flight assist, five flight
     cameras (chase, cockpit, orbit, tower, map), canvas instruments (compass, attitude indicator, minimap),
     PAPI lights, target beacon, procedural sound (engine spool, wind, runway rumble, reversers, touchdown
     chirp and thud, gear), camera shake on touchdown, tyre smoke and explosion particles, automatic reverse

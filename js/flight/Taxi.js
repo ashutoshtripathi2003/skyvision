@@ -41,6 +41,36 @@ export class TaxiGraph {
         prev = id;
       }
     });
+    this.joinDeadEnds();
+  }
+
+  // Map data is not always joined up: a taxiway may end on another one without
+  // sharing a point with it (a T-junction). Connect every dead end that lies
+  // within 15 m of another taxiway segment to both ends of that segment.
+  joinDeadEnds(reach = 15) {
+    const segments = [];
+    this.nodes.forEach((n, i) => n.edges.forEach((e) => { if (e.to > i) segments.push([i, e.to]); }));
+    this.nodes.forEach((n, i) => {
+      if (n.edges.length !== 1) return;
+      let best = null;
+      segments.forEach(([a, b]) => {
+        if (a === i || b === i || n.edges[0].to === a || n.edges[0].to === b) return;
+        const A = this.nodes[a];
+        const B = this.nodes[b];
+        const dx = B.x - A.x; const dz = B.z - A.z;
+        const t = clamp(((n.x - A.x) * dx + (n.z - A.z) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+        const px = A.x + t * dx; const pz = A.z + t * dz;
+        const d = Math.hypot(n.x - px, n.z - pz);
+        if (d < reach && (!best || d < best.d)) best = { a, b, d, px, pz };
+      });
+      if (!best) return;
+      [best.a, best.b].forEach((k) => {
+        const m = this.nodes[k];
+        const w = best.d + Math.hypot(best.px - m.x, best.pz - m.z);
+        n.edges.push({ to: k, w });
+        m.edges.push({ to: i, w });
+      });
+    });
   }
 
   nearest(x, z, filter = () => true) {
@@ -113,25 +143,42 @@ export class TaxiGraph {
 // size: aircraft size (1 = trainer); noseOffset: distance from the main gear
 // (the aircraft origin) forward to the nose wheel, which stops on the stand point;
 // fits(stand): whether the aircraft's wingspan fits at that stand.
-export function planTaxi(world, runway, position, heading, { size = 1, noseOffset = 0, fits = () => true } = {}) {
+// runway: the runway we are on (exits = taxiway nodes on it), or null when
+// re-planning during the taxi (start = the nearest taxiway nodes).
+// stand: plan to this stand instead of choosing the best free one.
+export function planTaxi(world, runway, position, heading, { size = 1, noseOffset = 0, fits = () => true, stand: fixedStand = null } = {}) {
   const graph = world.taxiGraph;
   if (!graph || graph.nodes.length === 0 || !world.stands) return null;
-  const airportStands = world.stands.filter((s) => s.airport === runway.airport && !s.occupied && fits(s));
+  const airportStands = fixedStand ? [fixedStand]
+    : world.stands.filter((s) => s.airport === runway.airport && !s.occupied && fits(s));
   if (airportStands.length === 0) return null;
 
-  // Runway exits: taxiway nodes on or right beside the runway, preferably ahead of us.
+  // Where we join the network: taxiway nodes on or right beside the runway (or,
+  // when re-planning, near the aircraft), preferably ahead of us.
   const forward = new THREE.Vector2(Math.sin(heading), Math.cos(heading));
   const exits = [];
   graph.nodes.forEach((n, i) => {
-    const local = toRunwayLocal(runway, n.x, n.z);
-    if (Math.abs(local.x) > runway.width / 2 + 25 || Math.abs(local.z) > runway.length / 2 + 20) return;
+    if (n.edges.length === 0) return;
+    if (runway) {
+      const local = toRunwayLocal(runway, n.x, n.z);
+      if (Math.abs(local.x) > runway.width / 2 + 25 || Math.abs(local.z) > runway.length / 2 + 20) return;
+    } else if (Math.hypot(n.x - position.x, n.z - position.z) > 150) return;
     const ahead = (n.x - position.x) * forward.x + (n.z - position.z) * forward.y;
-    if (n.edges.length > 0) exits.push({ id: i, ahead });
+    exits.push({ id: i, ahead });
   });
   if (exits.length === 0) return null;
-  const aheadExits = exits.filter((e) => e.ahead > 10 * size).sort((a, b) => a.ahead - b.ahead);
-  const exit = aheadExits[0] || exits.sort((a, b) => Math.abs(a.ahead) - Math.abs(b.ahead))[0];
+  // Try the exits in order (nearest ahead first); a node on an isolated scrap of
+  // taxiway leads nowhere, so move on to the next one.
+  const ahead = exits.filter((e) => e.ahead > 10 * size).sort((a, b) => a.ahead - b.ahead);
+  const others = exits.filter((e) => e.ahead <= 10 * size).sort((a, b) => Math.abs(a.ahead) - Math.abs(b.ahead));
+  for (const exit of [...ahead, ...others].slice(0, 12)) {
+    const plan = planFrom(graph, exit, airportStands, position, size, noseOffset);
+    if (plan) return plan;
+  }
+  return null;
+}
 
+function planFrom(graph, exit, airportStands, position, size, noseOffset) {
   const { dist, prev } = graph.shortestFrom(exit.id);
   const entryDistance = 55 * size;
   let best = null;
@@ -194,6 +241,36 @@ export class TaxiController {
   }
 
   get remaining() { return Math.max(0, this.total - this.progress); }
+
+  // Distance from the aircraft to the route line (near the current progress).
+  crossTrack() {
+    const p = this.model.position;
+    let best = Infinity;
+    for (let i = 1; i < this.route.length; i++) {
+      if (this.cumulative[i] < this.progress - 20 || this.cumulative[i - 1] > this.progress + 200) continue;
+      const [ax, az] = this.route[i - 1];
+      const [bx, bz] = this.route[i];
+      const dx = bx - ax; const dz = bz - az;
+      const t = clamp(((p.x - ax) * dx + (p.z - az) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+      best = Math.min(best, Math.hypot(p.x - ax - t * dx, p.z - az - t * dz));
+    }
+    return best;
+  }
+
+  // The next corner of the route ahead: { distance, direction: 'left' | 'right' }.
+  nextTurn() {
+    for (let i = 1; i < this.route.length - 1; i++) {
+      if (this.cumulative[i] <= this.progress + 2) continue;
+      const [ax, az] = this.route[i - 1];
+      const [bx, bz] = this.route[i];
+      const [cx, cz] = this.route[i + 1];
+      const h1 = Math.atan2(bx - ax, bz - az);
+      const h2 = Math.atan2(cx - bx, cz - bz);
+      const turn = wrapAngle(h2 - h1);
+      if (Math.abs(turn) > 0.4) return { distance: this.cumulative[i] - this.progress, direction: turn > 0 ? 'left' : 'right' };
+    }
+    return null;
+  }
 
   // Point at distance d along the route. Beyond the end it continues straight
   // along the last segment (the stand's lead-in line), so steering towards it

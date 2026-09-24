@@ -7,19 +7,27 @@ import { RunwayAids } from '../RunwayAids.js';
 import { createWorldMap } from '../WorldMap.js';
 import { AIRLINER } from '../../flight/FlightModel.js';
 import { TaxiGraph } from '../../flight/Taxi.js';
+import { REGIONS } from '../Regions.js';
+import { createClouds } from '../Clouds.js';
+import { AirTraffic } from '../AirTraffic.js';
 
-// "Real World: Mumbai" - built at runtime from real map + elevation data.
-// Returns the same world interface as SkyVisionWorld so the flight logic,
-// cameras and HUD work unchanged.
-export async function loadMumbaiWorld(onProgress = () => {}) {
-  onProgress('Loading map data');
-  const data = await loadMumbaiData();
+// A real-world region (Mumbai, Bengaluru, Chennai, Goa) - built at runtime from
+// real map + elevation data. Returns the same world interface as SkyVisionWorld
+// so the flight logic, cameras and HUD work unchanged.
+export function loadMumbaiWorld(onProgress) {
+  return loadRegionWorld('mumbai', onProgress);
+}
+
+export async function loadRegionWorld(regionId, onProgress = () => {}) {
+  const region = REGIONS[regionId];
+  onProgress(`Loading ${region.name} map data`);
+  const data = await loadMumbaiData('assets/data/', regionId);
   await nextFrame();
 
   onProgress('Building terrain and roads');
   const coverage = urbanCoverage(data);
   const group = new THREE.Group();
-  group.name = 'Mumbai';
+  group.name = region.name;
   group.add(createMumbaiTerrain(data, coverage));
   await nextFrame();
 
@@ -30,6 +38,7 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
   onProgress('Building airports and parking the fleet');
   const { group: airportGroup, towerEyes, stands, fleetLOD } = createMumbaiAirports(data);
   group.add(airportGroup);
+  group.add(createClouds(data.bounds, { seed: regionId.length * 97 + 11 }));
 
   const airports = data.json.airports.map((a) => ({
     id: a.id, name: a.name, short: a.short, x: a.x, y: a.y, z: a.z, iata: a.iata,
@@ -48,9 +57,9 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
     return [color.r * 255, color.g * 255, color.b * 255];
   });
 
-  return {
-    id: 'mumbai',
-    name: 'Mumbai Region',
+  const world = {
+    id: regionId,
+    name: region.name,
     group,
     aids,
     airports,
@@ -60,11 +69,15 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
     aircraftTypes: true,       // A320 / A350 / A380 can be chosen here
     taxiGraph: new TaxiGraph(data.json.taxiways.map((t) => t.p)),
     stands,
-    // Swap the parked aircraft nearest the camera for detailed models.
-    update: (dt, cameraPosition) => fleetLOD.update(dt, cameraPosition),
+    // Every frame: swap the parked aircraft nearest the camera for detailed
+    // models, and move the AI traffic.
+    update: (dt, cameraPosition, { player, elapsed, night }) => {
+      fleetLOD.update(dt, cameraPosition);
+      world.traffic.update(dt, player, elapsed, night);
+    },
     glideSlope: 3,
     navScale: 4,
-    mapRange: 14000,
+    mapRange: region.mapRange || 12000,
     finalDistance: 7000,
     fog: { near: 3000, far: 32000 },
     cameraFar: 60000,
@@ -75,6 +88,8 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
     map,
     attribution: data.json.attribution,
   };
+  world.traffic = new AirTraffic(world, group);
+  return world;
 }
 
 // Yield to the browser between heavy steps so the loading screen can update

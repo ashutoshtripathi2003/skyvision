@@ -13,7 +13,7 @@ import { wrapAngle, radToDeg } from '../utils/MathUtils.js';
 // world interface: heightAt / isWater / slopeAt / obstacleAt / runways / airports.
 //
 // status: GROUND (before takeoff) | FLYING | ROLLOUT (after touchdown)
-//         | TAXI (automatic taxi to a stand) | LANDED | CRASHED
+//         | TAXI (taxiing to a stand - by the pilot, or auto-taxi) | LANDED | CRASHED
 const FPM_PER_MPS = 196.85;
 const OFF_RUNWAY_CRASH_SPEED = 16;
 // Wide-bodies only fit at stands this far (m) from their neighbours.
@@ -34,7 +34,10 @@ export class PlayerFlight {
 
   // P key: engage / disengage the autopilot. Returns the message to show.
   toggleAutopilot() {
-    if (this.status === 'TAXI') { this.skipTaxi(); return 'PARKED AT THE STAND'; }
+    if (this.status === 'TAXI') {
+      this.autoTaxi = !this.autoTaxi;
+      return this.autoTaxi ? 'AUTO-TAXI ON' : 'AUTO-TAXI OFF · YOU HAVE CONTROL';
+    }
     if (this.status !== 'FLYING') return this.status === 'GROUND' ? 'TAKE OFF FIRST, THEN ENGAGE THE AUTOPILOT' : '';
     if (this.autopilot.engaged) { this.autopilot.disengage(); return 'AUTOPILOT OFF'; }
     return this.autopilot.engage().message;
@@ -73,6 +76,11 @@ export class PlayerFlight {
     this.crashReason = null;
     this.taxi = null;
     this.taxiTried = false;
+    this.autoTaxi = false;
+    this.taxiDistance = 0;
+    this.offRouteTime = 0;
+    this.trail = [];
+    this.trailTimer = 0;
     this.parkedAt = null;
     this.lastGearDown = this.model.gearDown;
     this.autopilot.disengage();
@@ -85,6 +93,13 @@ export class PlayerFlight {
     world.aids.setTarget(this.targetId);
     this.sound.start();
     this.syncAircraft();
+  }
+
+  // Choose a new destination (from the map). An engaged autopilot re-plans for it.
+  setTarget(id) {
+    this.targetId = id;
+    this.world.aids.setTarget(id);
+    if (this.autopilot.engaged && this.status === 'FLYING') this.autopilot.engage();
   }
 
   get target() {
@@ -126,7 +141,12 @@ export class PlayerFlight {
     }
     let controls;
     if (this.status === 'TAXI') {
-      controls = this.taxi.controls();
+      // The pilot taxis; auto-taxi (P) drives until the pilot touches the controls.
+      controls = this.readControls(input, touch);
+      const manual = controls.roll || controls.yaw || controls.throttle || controls.brake;
+      if (this.autoTaxi && manual) { this.autoTaxi = false; this.listeners.message('Auto-taxi off: you have control'); }
+      if (this.autoTaxi) controls = this.taxi.controls();
+      else this.followRoute(dt);
     } else {
       controls = this.readControls(input, touch);
       if (this.autopilot.engaged) {
@@ -143,6 +163,13 @@ export class PlayerFlight {
 
     this.time += dt;
     this.distance += before.distanceTo(this.model.position);
+    this.trailTimer -= dt;
+    if (this.trailTimer <= 0) { // breadcrumb trail for the map
+      this.trailTimer = 1.5;
+      this.trail.push([this.model.position.x, this.model.position.z]);
+      if (this.trail.length > 3000) this.trail.splice(0, 1000);
+    }
+    if (this.status === 'TAXI') this.taxiDistance += before.distanceTo(this.model.position);
     this.maxAltitude = Math.max(this.maxAltitude, this.model.agl);
 
     if (wasOnGround && !this.model.onGround) {
@@ -152,7 +179,7 @@ export class PlayerFlight {
     if (contact) this.handleContact(contact);
     if (this.model.onGround && this.status !== 'CRASHED') this.checkGroundRoll();
     if (!this.model.onGround && this.status !== 'CRASHED') this.checkHazards();
-    if (this.status === 'TAXI' && this.taxi.done) this.park();
+    if (this.status === 'TAXI') this.checkParking();
 
     if (this.model.gearDown !== this.lastGearDown) {
       this.lastGearDown = this.model.gearDown;
@@ -229,7 +256,7 @@ export class PlayerFlight {
   checkGroundRoll() {
     const m = this.model;
     const onRunway = this.runwayAt(m.position.x, m.position.z, 3);
-    if (!onRunway && m.speed > OFF_RUNWAY_CRASH_SPEED) {
+    if (!onRunway && m.speed > OFF_RUNWAY_CRASH_SPEED && this.status !== 'TAXI') {
       this.crash(this.status === 'ROLLOUT' ? 'Ran off the runway' : 'Left the runway at high speed');
       return;
     }
@@ -265,32 +292,62 @@ export class PlayerFlight {
     if (!plan) return false;
     this.status = 'TAXI';
     this.autopilot.disengage();
-    this.taxi = new TaxiController(m, plan, this.size);
-    plan.stand.occupied = true;
-    plan.stand.player = true;
+    this.taxiOptions = options;
+    this.setTaxiPlan(plan);
     m.flaps = 0;
     m.reverse = false;
-    this.listeners.route(plan.route);
-    this.listeners.message(`Taxi to stand ${plan.stand.name}`);
+    this.listeners.message(`Taxi to stand ${plan.stand.name} · follow the green line`);
     return true;
   }
 
-  // P / AP during the taxi: jump straight to the stand.
-  skipTaxi() {
-    if (this.status !== 'TAXI') return;
-    const [x, z] = this.taxi.route[this.taxi.route.length - 1];
-    this.model.position.set(x, this.world.heightAt(x, z), z);
-    this.model.quaternion.setFromEuler(new THREE.Euler(0, this.taxi.stand.heading, 0, 'YXZ'));
-    this.model.updateAttitude();
-    this.taxi.progress = this.taxi.total;
-    this.park();
+  setTaxiPlan(plan) {
+    if (this.taxi && this.taxi.stand !== plan.stand) { this.taxi.stand.occupied = false; this.taxi.stand.player = false; }
+    this.taxi = new TaxiController(this.model, plan, this.size);
+    plan.stand.occupied = true;
+    plan.stand.player = true;
+    this.offRouteTime = 0;
+    this.listeners.route(plan.route);
   }
 
-  park() {
+  // Manual taxi: track progress along the green line, and plan a new route to
+  // the same stand if the pilot takes a different taxiway.
+  followRoute(dt) {
+    const t = this.taxi;
+    t.updateProgress();
+    const offRoute = t.crossTrack() > 45 * Math.sqrt(this.size / 1.4);
+    this.offRouteTime = offRoute ? this.offRouteTime + dt : 0;
+    if (this.offRouteTime > 2.5) {
+      const m = this.model;
+      const plan = planTaxi(this.world, null, m.position, m.heading, { ...this.taxiOptions, stand: t.stand });
+      if (plan) { this.setTaxiPlan(plan); this.listeners.message('New route to the stand'); }
+      this.offRouteTime = 0;
+    }
+  }
+
+  // Parked = stopped with the nose wheel on a free stand's stop mark, lined up with it.
+  checkParking() {
+    const m = this.model;
+    if (this.autoTaxi && this.taxi.done) { this.park(this.taxi.stand); return; }
+    if (m.speed > 0.8) return;
+    const noseOffset = this.taxiOptions.noseOffset;
+    const tolerance = 3 * Math.sqrt(this.size / 1.4);
+    const candidates = this.world.stands.filter((s) => s.airport === this.taxi.stand.airport && (!s.occupied || s.player));
+    for (const s of candidates) {
+      const sx = s.x - Math.sin(s.heading) * noseOffset;
+      const sz = s.z - Math.cos(s.heading) * noseOffset;
+      if (Math.hypot(m.position.x - sx, m.position.z - sz) < tolerance && Math.abs(wrapAngle(m.heading - s.heading)) < 0.35) {
+        if (s !== this.taxi.stand) { this.taxi.stand.occupied = false; this.taxi.stand.player = false; s.occupied = true; s.player = true; }
+        this.park(s);
+        return;
+      }
+    }
+  }
+
+  park(stand) {
     this.status = 'LANDED';
     this.model.speed = 0;
     this.model.throttle = 0;
-    this.parkedAt = { stand: this.taxi.stand, distance: this.taxi.total };
+    this.parkedAt = { stand, distance: this.taxiDistance, byPilot: !this.autoTaxi };
     this.listeners.route(null);
     this.syncAircraft();
     this.sound.stop();
@@ -349,7 +406,7 @@ export class PlayerFlight {
         ['Runway alignment', `${td.alignment.toFixed(1)}°`],
         ['Touchdown point', `${Math.round(td.fromThreshold)} m past threshold`],
         ['Touchdown speed', `${td.speedKt} kt`],
-        ...(this.parkedAt ? [['Parked at', `Stand ${this.parkedAt.stand.name} · taxied ${(this.parkedAt.distance / 1000).toFixed(1)} km`]] : []),
+        ...(this.parkedAt ? [['Parked at', `Stand ${this.parkedAt.stand.name} · taxied ${(this.parkedAt.distance / 1000).toFixed(1)} km${this.parkedAt.byPilot ? ' by you' : ''}`]] : []),
       ],
     };
   }
@@ -399,8 +456,14 @@ export class PlayerFlight {
     if (this.status === 'ROLLOUT') return t('Reversers out · hold B or SPACE to brake', 'Reversers out · hold BRAKE to slow down');
     if (this.status === 'TAXI') {
       const left = Math.round(this.taxi.remaining);
-      return t(`Taxiing to stand ${this.taxi.stand.name} (${left} m) · follow the green line · P to skip`,
-        `Taxiing to stand ${this.taxi.stand.name} (${left} m) · tap AP to skip`);
+      const stand = this.taxi.stand.name;
+      if (this.autoTaxi) return t(`Auto-taxi to stand ${stand} (${left} m) · touch any key to drive yourself`, `Auto-taxi to stand ${stand} (${left} m) · move the stick to drive yourself`);
+      if (left < 70) return t(`Stand ${stand}: stop with the nose on the red bar (${left} m) · hold B to brake`, `Stand ${stand}: stop on the red bar (${left} m) · hold BRAKE`);
+      const turn = this.taxi.nextTurn();
+      const next = turn ? `turn ${turn.direction} in ${Math.round(turn.distance)} m` : 'straight ahead';
+      const fast = m.speed > 12 ? ' · SLOW DOWN' : '';
+      return t(`Taxi to stand ${stand}: ${left} m · ${next}${fast} · steer A/D, power SHIFT/Z · P = auto-taxi`,
+        `Taxi to stand ${stand}: ${left} m · ${next}${fast} · AP = auto-taxi`);
     }
     if (this.status !== 'FLYING') return '';
     if (this.autopilot.engaged) return t('Autopilot flying · touch any flight key to take over', 'Autopilot flying · move the stick or throttle to take over');

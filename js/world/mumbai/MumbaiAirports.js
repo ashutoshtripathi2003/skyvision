@@ -257,7 +257,7 @@ function createJetBridges(json, airportAt) {
 function createTowers(json, airportPolys) {
   const group = new THREE.Group();
   const towerEyes = new Map();
-  const SCALE = { BOM: 1.9, NMI: 1.6, JUH: 0.8 };
+  const SCALE = { BOM: 1.9, NMI: 1.6, JUH: 0.8, DEL: 2.0, BLR: 1.9, HYD: 1.8, MAA: 1.6, CCU: 1.6, GOI: 1.3 };
   json.airports.forEach((apt) => {
     const scale = SCALE[apt.id] || 1;
     let spot = json.towers.find((t) => t.airport === apt.id);
@@ -347,6 +347,7 @@ function createApronLights(json) {
 function createParkedFleet(stands) {
   const rand = seededRandom(2026);
   const occupancy = { BOM: 0.72, NMI: 0.5 };
+  const DEFAULT_MIX = { indigo: 40, airindia: 25, akasa: 12, spicejet: 8, aiexpress: 15 };
   const pick = (mix) => {
     const total = Object.values(mix).reduce((a, b) => a + b, 0);
     let r = rand() * total;
@@ -355,8 +356,8 @@ function createParkedFleet(stands) {
   };
   const placements = [];
   stands.forEach((s) => {
-    const mix = FLEET_MIX[s.airport];
-    if (!mix || rand() > occupancy[s.airport]) return;
+    const mix = FLEET_MIX[s.airport] || (s.airport === 'JUH' ? null : DEFAULT_MIX); // Juhu: light aircraft only
+    if (!mix || rand() > (occupancy[s.airport] ?? 0.62)) return;
     let livery = pick(mix);
     let type = 'a320';
     if (s.spacing > 82 && rand() < 0.35) { type = 'a380'; livery = 'skyvision'; }

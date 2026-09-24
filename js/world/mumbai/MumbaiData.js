@@ -1,15 +1,17 @@
-// Loads the pre-built Mumbai data (see tools/build-mumbai-data.mjs) and
+// Loads a pre-built real-world region (see tools/build-region-data.mjs) and
 // provides the queries the flight logic needs: terrain height, water, slope and
 // building obstacles.
 
 export const SEA_LEVEL = 0.3;
 const OBSTACLE_CELL = 30;
 
-export async function loadMumbaiData(base = 'assets/data/') {
+export async function loadMumbaiData(base = 'assets/data/', region = 'mumbai') {
+  const get = (file, type) => fetch(`${base}${file}`).then((r) => {
+    if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
+    return type === 'json' ? r.json() : r.arrayBuffer();
+  });
   const [json, terrain, buildings] = await Promise.all([
-    fetch(`${base}mumbai.json`).then((r) => r.json()),
-    fetch(`${base}mumbai-terrain.bin`).then((r) => r.arrayBuffer()),
-    fetch(`${base}mumbai-buildings.bin`).then((r) => r.arrayBuffer()),
+    get(`${region}.json`, 'json'), get(`${region}-terrain.bin`), get(`${region}-buildings.bin`),
   ]);
   return createMumbaiData(json, new Int16Array(terrain), new Int16Array(buildings));
 }
@@ -77,8 +79,15 @@ export function createMumbaiData(json, terrainDm, buildingsDm) {
     return roofs[j * ow + i];
   }
 
+  // Base level of the land (10th percentile above sea): plateau regions such as
+  // Bengaluru (~900 m) are coloured by height above this, not above sea level.
+  const land = [];
+  for (let i = 0; i < heights.length; i += 7) if (heights[i] > SEA_LEVEL) land.push(heights[i]);
+  land.sort((a, b) => a - b);
+  const baseHeight = land.length ? Math.max(0, land[Math.floor(land.length * 0.1)] - 5) : 0;
+
   return {
-    json, grid: g, heights, bounds: { minX: g.minX, minZ: g.minZ, maxX, maxZ },
+    json, grid: g, heights, baseHeight, bounds: { minX: g.minX, minZ: g.minZ, maxX, maxZ },
     heightAt, slopeAt, isWater, obstacleAt, cityBuildings,
   };
 }

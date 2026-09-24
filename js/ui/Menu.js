@@ -1,4 +1,5 @@
-import { MISSIONS } from '../flight/Missions.js';
+import { MISSIONS, airportMissions } from '../flight/Missions.js';
+import { REGIONS, NEW_REGIONS } from '../world/Regions.js';
 import { LIVERIES, INDIAN_AIRLINES } from '../aircraft/Liveries.js';
 import { AIRCRAFT_TYPES, TYPE_KEYS } from '../aircraft/AircraftTypes.js';
 
@@ -60,6 +61,37 @@ export class Menu {
     this.buildAirlinePicker();
     this.buildTypePicker();
     this.buildMissionCards();
+    this.buildAirportList();
+  }
+
+  // One card per extra real airport, each with "take off" and "final approach".
+  buildAirportList() {
+    const list = $('airport-list');
+    NEW_REGIONS.forEach((id) => {
+      const region = REGIONS[id];
+      const [takeoff, final] = airportMissions(id, region);
+      const card = document.createElement('div');
+      card.className = 'airport-card';
+      card.id = `airport-${id}`;
+      const code = document.createElement('span');
+      code.className = 'airport-code';
+      code.textContent = region.airports[0];
+      const title = document.createElement('h3');
+      title.textContent = region.city || region.name;
+      const blurb = document.createElement('p');
+      blurb.textContent = region.blurb;
+      const buttons = document.createElement('div');
+      buttons.className = 'airport-buttons';
+      [[takeoff, 'TAKE OFF'], [final, 'ON FINAL']].forEach(([mission, label]) => {
+        const b = document.createElement('button');
+        b.id = `mission-${mission.id}`;
+        b.textContent = label;
+        b.onclick = () => this.handlers.onStartMission(mission);
+        buttons.appendChild(b);
+      });
+      card.append(code, title, blurb, buttons);
+      list.appendChild(card);
+    });
   }
 
   buildTypePicker() {

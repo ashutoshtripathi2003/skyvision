@@ -38,6 +38,24 @@ export const MISSIONS = [
   },
 ];
 
+// Two ready-made flights for every other real airport: take off and land back
+// (fly a circuit, or anywhere else you like), or start 7 km out on final.
+export function airportMissions(regionId, region) {
+  const airport = region.airports[0];
+  return [
+    {
+      id: `${regionId}-circuit`, world: regionId, title: `${region.name}: take off`, from: airport, to: airport,
+      start: 'runway', difficulty: 'Normal', route: `${airport} · circuit`,
+      blurb: 'Line up on the longest runway, fly a circuit and land back.',
+    },
+    {
+      id: `${regionId}-final`, world: regionId, title: `${region.name}: final approach`, from: airport, to: airport,
+      start: 'final', difficulty: 'Training', route: `7 km final → ${airport}`,
+      blurb: 'Start stabilised on final. Land, then taxi to a gate.',
+    },
+  ];
+}
+
 export function findRunway(world, airportId, label) {
   const runways = world.runways.filter((r) => r.airport === airportId);
   return runways.find((r) => label && r.designators.includes(label))

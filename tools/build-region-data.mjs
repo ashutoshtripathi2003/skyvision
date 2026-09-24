@@ -1,6 +1,8 @@
-// Builds the Mumbai region data used by the "Real World: Mumbai" mode.
+// Builds the real-world region data (Mumbai, Delhi, Bengaluru, Hyderabad,
+// Chennai, Kolkata, Goa) used by the real-airport modes.
 //
-//   node tools/build-mumbai-data.mjs
+//   node tools/build-region-data.mjs <region>      e.g. mumbai, delhi, goa
+//   node tools/build-region-data.mjs all
 //
 // Sources (downloaded once, cached in tools/.cache/):
 //   - OpenStreetMap via the Overpass API: runways, taxiways, aprons, terminals,
@@ -8,13 +10,13 @@
 //     (c) OpenStreetMap contributors, ODbL - the app shows this attribution.
 //   - Elevation: AWS Terrain Tiles ("terrarium" PNG encoding), zoom 12 (~38 m/pixel).
 //
-// Output (assets/data/):
-//   mumbai.json           - airports, runways, taxiways, aprons, buildings, stands, roads
-//   mumbai-terrain.bin    - Int16 height grid in decimetres
-//   mumbai-buildings.bin  - 5 x Int16 per city building: x, z, width, depth (dm), height (dm)
+// Output (assets/data/), per region:
+//   <region>.json           - airports, runways, taxiways, aprons, buildings, stands, roads
+//   <region>-terrain.bin    - Int16 height grid in decimetres
+//   <region>-buildings.bin  - 5 x Int16 per city building: x, z, width, depth (dm), height (dm)
 //
 // Coordinates: latitude/longitude are projected onto a flat local plane
-// (equirectangular projection around ORIGIN): x = east metres, z = south metres.
+// (equirectangular projection around the region's origin): x = east metres, z = south metres.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -26,18 +28,62 @@ const CACHE = path.join(ROOT, 'tools', '.cache');
 fs.mkdirSync(OUT, { recursive: true });
 fs.mkdirSync(CACHE, { recursive: true });
 
-const ORIGIN = { lat: 19.04, lon: 72.955 };
-const BBOX = { s: 18.93, w: 72.78, n: 19.17, e: 73.13 };
-const AIRPORTS = [
-  { id: 'BOM', way: 22826676, name: 'Chhatrapati Shivaji Maharaj International Airport', short: 'Mumbai', minElevation: 8 },
-  { id: 'NMI', way: 455547086, name: 'Navi Mumbai International Airport', short: 'Navi Mumbai', minElevation: 8 },
-  { id: 'JUH', way: 49794789, name: 'Juhu Aerodrome', short: 'Juhu', minElevation: 4 },
-];
+// Each region: a bounding box around its airport(s); every airport is identified
+// by its OpenStreetMap aerodrome boundary (a way, or a multipolygon relation).
+// Single-airport regions are ~20 x 20 km centred on the airport.
+const around = (lat, lon, dLat = 0.095, dLon = 0.1) => ({ s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon });
+export const REGIONS = {
+  mumbai: {
+    origin: { lat: 19.04, lon: 72.955 },
+    bbox: { s: 18.93, w: 72.78, n: 19.17, e: 73.13 },
+    cachePrefix: '', buildingGrid: 2, maxBuildings: Infinity,
+    airports: [
+      { id: 'BOM', way: 22826676, name: 'Chhatrapati Shivaji Maharaj International Airport', short: 'Mumbai', minElevation: 8 },
+      { id: 'NMI', way: 455547086, name: 'Navi Mumbai International Airport', short: 'Navi Mumbai', minElevation: 8 },
+      { id: 'JUH', way: 49794789, name: 'Juhu Aerodrome', short: 'Juhu', minElevation: 4 },
+    ],
+  },
+  delhi: {
+    bbox: around(28.5554, 77.0971), buildingGrid: 3, maxBuildings: 130000,
+    airports: [{ id: 'DEL', rel: 19597141, name: 'Indira Gandhi International Airport', short: 'Delhi', minElevation: 0 }],
+  },
+  bengaluru: {
+    bbox: around(13.1976, 77.7063), buildingGrid: 3, maxBuildings: 130000,
+    airports: [{ id: 'BLR', way: 252746837, name: 'Kempegowda International Airport', short: 'Bengaluru', minElevation: 0 }],
+  },
+  hyderabad: {
+    bbox: around(17.2313, 78.4322), buildingGrid: 3, maxBuildings: 130000,
+    airports: [{ id: 'HYD', rel: 10734455, name: 'Rajiv Gandhi International Airport', short: 'Hyderabad', minElevation: 0 }],
+  },
+  chennai: {
+    bbox: around(12.9934, 80.1673), buildingGrid: 3, maxBuildings: 130000,
+    airports: [{ id: 'MAA', way: 23633604, name: 'Chennai International Airport', short: 'Chennai', minElevation: 6 }],
+  },
+  kolkata: {
+    bbox: around(22.6564, 88.4448), buildingGrid: 3, maxBuildings: 130000,
+    airports: [{ id: 'CCU', way: 64689452, name: 'Netaji Subhash Chandra Bose International Airport', short: 'Kolkata', minElevation: 4 }],
+  },
+  goa: {
+    bbox: around(15.3806, 73.8327), buildingGrid: 3, maxBuildings: 130000,
+    airports: [{ id: 'GOI', way: 91549529, name: 'Goa International Airport (Dabolim)', short: 'Goa', minElevation: 20 }],
+  },
+};
+
+const REGION_ID = process.argv[2] || 'mumbai';
+if (REGION_ID !== 'all' && !REGIONS[REGION_ID]) throw new Error(`unknown region ${REGION_ID}: ${Object.keys(REGIONS).join(', ')}`);
+let REGION; let ORIGIN; let BBOX; let AIRPORTS; let M_PER_DEG_LON; let PREFIX;
+function selectRegion(id) {
+  REGION = REGIONS[id];
+  BBOX = REGION.bbox;
+  ORIGIN = REGION.origin || { lat: (BBOX.s + BBOX.n) / 2, lon: (BBOX.w + BBOX.e) / 2 };
+  AIRPORTS = REGION.airports;
+  M_PER_DEG_LON = 111320 * Math.cos((ORIGIN.lat * Math.PI) / 180);
+  PREFIX = REGION.cachePrefix ?? `${id}-`;
+}
 const GRID_STEP = 60;
 const DEM_ZOOM = 12;
 
 const M_PER_DEG_LAT = 110574;
-const M_PER_DEG_LON = 111320 * Math.cos((ORIGIN.lat * Math.PI) / 180);
 const project = (lat, lon) => [(lon - ORIGIN.lon) * M_PER_DEG_LON, -(lat - ORIGIN.lat) * M_PER_DEG_LAT];
 const unproject = (x, z) => [ORIGIN.lat - z / M_PER_DEG_LAT, ORIGIN.lon + x / M_PER_DEG_LON];
 const round1 = (v) => Math.round(v * 10) / 10;
@@ -51,10 +97,10 @@ const ENDPOINTS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 
-async function overpass(label, query) {
-  const file = path.join(CACHE, `${label}.json`);
+async function overpass(label, query, attempts = 12) {
+  const file = path.join(CACHE, `${PREFIX}${label}.json`);
   if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     const url = ENDPOINTS[attempt % ENDPOINTS.length];
     try {
       process.stdout.write(`  ${label}: ${new URL(url).host} (try ${attempt + 1})... `);
@@ -274,7 +320,15 @@ function compassOf(ux, uz) {
 
 function buildRunways(elements, airport) {
   const ways = elements.filter((e) => e.type === 'way' && e.tags?.aeroway === 'runway' && e.geometry);
-  const mains = ways.filter((w) => w.tags.runway !== 'displaced_threshold' && w.tags.ref);
+  let mains = ways.filter((w) => w.tags.runway !== 'displaced_threshold' && w.tags.ref);
+  if (mains.length === 0) {
+    // Runways mapped without a "ref" (e.g. Goa): use the longest open centrelines;
+    // their designators are worked out from the heading below.
+    const pathLength = (w) => geomToXZ(w.geometry).reduce((sum, p, i, pts) => (i ? sum + Math.hypot(p[0] - pts[i - 1][0], p[1] - pts[i - 1][1]) : 0), 0);
+    const open = (w) => !(w.geometry[0].lat === w.geometry[w.geometry.length - 1].lat && w.geometry[0].lon === w.geometry[w.geometry.length - 1].lon);
+    const ranked = ways.filter(open).map((w) => [w, pathLength(w)]).sort((x, y) => y[1] - x[1]);
+    if (ranked.length) mains = ranked.filter(([, l]) => l >= ranked[0][1] * 0.7).map(([w]) => w);
+  }
   const extras = ways.filter((w) => !mains.includes(w));
   const runways = [];
   const seen = new Set();
@@ -286,7 +340,7 @@ function buildRunways(elements, airport) {
     const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
     const ux = (b[0] - a[0]) / len;
     const uz = (b[1] - a[1]) / len;
-    const key = main.tags.ref;
+    const key = main.tags.ref || String(main.id);
     if (seen.has(key)) return;
     seen.add(key);
 
@@ -332,16 +386,33 @@ function buildRunways(elements, airport) {
 }
 
 // ---------------------------------------------------------------- main
-async function main() {
+async function buildRegion(id) {
+  selectRegion(id);
+  console.log(`\n=== ${id}`);
   console.log('OpenStreetMap: airports');
-  const areaDefs = AIRPORTS.map((a, i) => `way(${a.way});map_to_area->.a${i};`).join('');
+  const ref = (a) => (a.rel ? `rel(${a.rel})` : `way(${a.way})`);
+  const areaDefs = AIRPORTS.map((a, i) => `${ref(a)};map_to_area->.a${i};`).join('');
   const aeroSel = AIRPORTS.map((_, i) => `
     way["aeroway"~"^(runway|taxiway|taxilane|apron|terminal|hangar|parking_position|jet_bridge|tower)$"](area.a${i});
     relation["aeroway"="apron"](area.a${i});
     node["aeroway"~"^(parking_position|tower|windsock)$"](area.a${i});
     way["building"](area.a${i});`).join('');
-  const airportsData = await overpass('airports', `[out:json][timeout:240];${areaDefs}(${aeroSel}
-    ${AIRPORTS.map((a) => `way(${a.way});`).join('')});out geom;`);
+  // Mumbai (cached) used "area" queries; the newer regions use a plain bounding
+  // box around the airport, which the Overpass servers answer far more reliably,
+  // and keep only what lies inside the airport boundary afterwards.
+  const c = { lat: (BBOX.s + BBOX.n) / 2, lon: (BBOX.w + BBOX.e) / 2 };
+  const box = `${c.lat - 0.05},${c.lon - 0.055},${c.lat + 0.05},${c.lon + 0.055}`;
+  const airportQuery = REGION.cachePrefix === ''
+    ? `[out:json][timeout:240];${areaDefs}(${aeroSel}
+    ${AIRPORTS.map((a) => `${ref(a)};`).join('')});out geom;`
+    : `[out:json][timeout:240];(
+    way["aeroway"~"^(runway|taxiway|taxilane|apron|terminal|hangar|parking_position|jet_bridge|tower)$"](${box});
+    relation["aeroway"="apron"](${box});
+    node["aeroway"~"^(parking_position|tower|windsock)$"](${box});
+    way["building"]["aeroway"](${box});
+    way["building"~"^(terminal|hangar|transportation|industrial|warehouse|office|commercial)$"](${box});
+    ${AIRPORTS.map((a) => `${ref(a)};`).join('')});out geom;`;
+  const airportsData = await overpass('airports', airportQuery);
 
   console.log('OpenStreetMap: major roads');
   const roadsData = await overpass('roads', `[out:json][timeout:240];
@@ -349,21 +420,46 @@ async function main() {
 
   console.log('OpenStreetMap: city buildings (bounding boxes)');
   const buildingChunks = [];
-  const latMid = (BBOX.s + BBOX.n) / 2;
-  const lonMid = (BBOX.w + BBOX.e) / 2;
-  const quads = [
-    [BBOX.s, BBOX.w, latMid, lonMid], [BBOX.s, lonMid, latMid, BBOX.e],
-    [latMid, BBOX.w, BBOX.n, lonMid], [latMid, lonMid, BBOX.n, BBOX.e],
-  ];
+  const g = REGION.buildingGrid;
+  const quads = [];
+  for (let row = 0; row < g; row++) {
+    for (let col = 0; col < g; col++) {
+      const s = BBOX.s + ((BBOX.n - BBOX.s) * row) / g;
+      const w = BBOX.w + ((BBOX.e - BBOX.w) * col) / g;
+      quads.push([s, w, s + (BBOX.n - BBOX.s) / g, w + (BBOX.e - BBOX.w) / g]);
+    }
+  }
+  // A tile the servers keep timing out on (a dense city) is split into four smaller ones.
+  async function buildingTile(label, [s, w, n, e], depth = 0) {
+    try {
+      return [await overpass(label, `[out:json][timeout:300];way["building"](${s},${w},${n},${e});out bb tags;`, depth < 2 ? 4 : 10)];
+    } catch (err) {
+      if (depth >= 2) throw err;
+      console.log(`  ${label}: splitting into 4 smaller tiles`);
+      const ms = (s + n) / 2;
+      const mw = (w + e) / 2;
+      const parts = [];
+      for (const [k, box] of [[s, w, ms, mw], [s, mw, ms, e], [ms, w, n, mw], [ms, mw, n, e]].entries()) {
+        parts.push(...await buildingTile(`${label}-${k}`, box, depth + 1));
+      }
+      return parts;
+    }
+  }
   for (const [i, q] of quads.entries()) {
-    buildingChunks.push(await overpass(`buildings-${i}`, `[out:json][timeout:300];way["building"](${q.join(',')});out bb tags;`));
+    buildingChunks.push(...await buildingTile(`buildings-${i}`, q));
   }
 
   // ---- airports
   const els = airportsData.elements;
   const airports = AIRPORTS.map((def) => {
-    const way = els.find((e) => e.type === 'way' && e.id === def.way);
-    const polygon = geomToXZ(way.geometry);
+    const way = def.rel
+      ? els.find((e) => e.type === 'relation' && e.id === def.rel)
+      : els.find((e) => e.type === 'way' && e.id === def.way);
+    // A relation's boundary: the largest outer ring stitched from its member ways.
+    const polygon = def.rel
+      ? stitchRings(way.members.filter((m) => m.role === 'outer' && m.geometry).map((m) => m.geometry))
+        .map(geomToXZ).sort((a, b) => b.length - a.length)[0]
+      : geomToXZ(way.geometry);
     const [cx, cz] = centroid(polygon);
     const ele = parseFloat(way.tags.ele);
     return {
@@ -373,6 +469,23 @@ async function main() {
   });
   const airportOf = (x, z) => airports.find((a) => pointInPolygon(x, z, a.polygon)) ||
     airports.reduce((best, a) => (Math.hypot(x - a.x, z - a.z) < Math.hypot(x - best.x, z - best.z) ? a : best));
+
+  if (REGION.cachePrefix !== '') {
+    const near = (x, z, margin) => airports.some((a) => pointInPolygon(x, z, a.polygon) || distanceToPolygon(x, z, a.polygon) < margin);
+    const keep = (e) => {
+      if (AIRPORTS.some((a) => e.id === (a.rel || a.way))) return true;
+      const [x, z] = e.type === 'node' ? project(e.lat, e.lon)
+        : e.geometry ? project(e.geometry[0].lat, e.geometry[0].lon)
+          : e.members && e.members.find((m) => m.geometry) ? project(e.members.find((m) => m.geometry).geometry[0].lat, e.members.find((m) => m.geometry).geometry[0].lon)
+            : [Infinity, Infinity];
+      return near(x, z, e.tags && e.tags.aeroway === 'runway' ? 50 : 150);
+    };
+    const before = els.length;
+    const kept = els.filter(keep);
+    els.length = 0;
+    els.push(...kept);
+    console.log(`  kept ${els.length} of ${before} airport map elements inside the boundary`);
+  }
 
   const grid = await buildTerrain();
   flattenAirports(grid, airports);
@@ -446,6 +559,41 @@ async function main() {
     stands.push({ x: round1(x), z: round1(z), y: apt.y, heading: Math.round(heading * 1000) / 1000, airport: apt.id, ref: e.tags.ref || null });
   });
 
+  // Airports with no gates in the map data (e.g. Chennai): one gate per jet
+  // bridge. The aircraft parks nose-in, square to the terminal wall nearest to
+  // the bridge's outer end, with its front left door at the bridge.
+  airports.forEach((apt) => {
+    if (stands.some((st) => st.airport === apt.id)) return;
+    const walls = [];
+    airportBuildings.filter((b) => b.kind === 'terminal' && airportOf(b.p[0], b.p[1]) === apt).forEach((b) => {
+      for (let i = 0; i + 3 < b.p.length; i += 2) walls.push([b.p[i], b.p[i + 1], b.p[i + 2], b.p[i + 3]]);
+    });
+    if (!walls.length) return;
+    let n = 0;
+    bridges.filter((br) => airportOf(...br[0]) === apt).forEach((br) => {
+      // outer end = the end farther from any terminal wall
+      const wallDistance = ([x, z]) => walls.reduce((best, [ax, az, bx, bz]) => {
+        const dx = bx - ax; const dz = bz - az;
+        const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1)));
+        const px = ax + t * dx; const pz = az + t * dz;
+        const d = Math.hypot(x - px, z - pz);
+        return d < best.d ? { d, px, pz } : best;
+      }, { d: Infinity });
+      const a = br[0]; const b = br[br.length - 1];
+      const end = wallDistance(a).d > wallDistance(b).d ? a : b;
+      const wall = wallDistance(end);
+      if (wall.d > 120) return;
+      const heading = Math.atan2(wall.px - end[0], wall.pz - end[1]); // nose towards the terminal
+      // the door is on the aircraft's left: the centreline is ~2.5 m to its right
+      const x = end[0] - Math.cos(heading) * 2.5;
+      const z = end[1] + Math.sin(heading) * 2.5;
+      if (stands.some((st) => Math.hypot(st.x - x, st.z - z) < 30)) return; // twin bridges at one gate
+      n++;
+      stands.push({ x: round1(x), z: round1(z), y: apt.y, heading: Math.round(heading * 1000) / 1000, airport: apt.id, ref: `B${n}` });
+    });
+    console.log(`  ${apt.id}: no gates in the map data, ${n} made from jet bridges`);
+  });
+
   const towers = els.filter((e) => e.tags?.aeroway === 'tower').map((e) => {
     const [x, z] = e.type === 'node' ? project(e.lat, e.lon) : centroid(geomToXZ(e.geometry));
     return { x: round1(x), z: round1(z), airport: airportOf(x, z).id, h: parseHeight(e.tags, 0) };
@@ -463,7 +611,7 @@ async function main() {
 
   // ---- city buildings -> binary
   const seenIds = new Set();
-  const cityRows = [];
+  let cityRows = [];
   buildingChunks.forEach((chunk) => chunk.elements.forEach((e) => {
     if (!e.bounds || seenIds.has(e.id)) return;
     seenIds.add(e.id);
@@ -480,34 +628,44 @@ async function main() {
     const h = Math.min(320, parseHeight(e.tags || {}, fallback));
     cityRows.push([Math.round(cx), Math.round(cz), Math.round(w * 10), Math.round(d * 10), Math.round(h * 10)]);
   }));
+  // Very dense regions: keep the biggest buildings (footprint x height), which shape the skyline.
+  if (cityRows.length > REGION.maxBuildings) {
+    cityRows = cityRows.sort((a, b) => b[2] * b[3] * b[4] - a[2] * a[3] * a[4]).slice(0, REGION.maxBuildings);
+  }
   const cityBuffer = new Int16Array(cityRows.length * 5);
   cityRows.forEach((row, i) => cityBuffer.set(row.map((v) => Math.max(-32768, Math.min(32767, v))), i * 5));
-  fs.writeFileSync(path.join(OUT, 'mumbai-buildings.bin'), Buffer.from(cityBuffer.buffer));
+  fs.writeFileSync(path.join(OUT, `${id}-buildings.bin`), Buffer.from(cityBuffer.buffer));
 
   // ---- terrain -> binary (decimetres)
   const terrainBuffer = new Int16Array(grid.heights.length);
   grid.heights.forEach((h, i) => { terrainBuffer[i] = Math.max(-32768, Math.min(32767, Math.round(h * 10))); });
-  fs.writeFileSync(path.join(OUT, 'mumbai-terrain.bin'), Buffer.from(terrainBuffer.buffer));
+  fs.writeFileSync(path.join(OUT, `${id}-terrain.bin`), Buffer.from(terrainBuffer.buffer));
 
   const data = {
     attribution: 'Map data © OpenStreetMap contributors (ODbL). Elevation: AWS Terrain Tiles (SRTM and others).',
     origin: ORIGIN,
     grid: { minX: round1(grid.minX), minZ: round1(grid.minZ), width: grid.width, height: grid.height, step: grid.step },
-    airports: airports.map(({ polygon, way, minElevation, ele, ...a }) => ({ ...a, polygon: flat(polygon) })),
+    region: id,
+    airports: airports.map(({ polygon, way, rel, minElevation, ele, ...a }) => ({ ...a, polygon: flat(polygon) })),
     runways, taxiways, aprons, buildings: airportBuildings, stands, towers, windsocks,
     jetBridges: bridges.map((b) => flat(b)), roads,
     cityBuildingCount: cityRows.length,
   };
-  fs.writeFileSync(path.join(OUT, 'mumbai.json'), JSON.stringify(data));
+  fs.writeFileSync(path.join(OUT, `${id}.json`), JSON.stringify(data));
 
   console.log('\nDone:');
   console.log(`  airports ${airports.map((a) => `${a.id}@${a.y}m`).join(', ')}`);
   runways.forEach((r) => console.log(`  runway ${r.airport} ${r.designators.join('/')} ${r.length} x ${r.width} m`));
   console.log(`  taxiways ${taxiways.length}, aprons ${aprons.length}, airport buildings ${airportBuildings.length}, stands ${stands.length}, jet bridges ${bridges.length}`);
   console.log(`  roads ${roads.length}, city buildings ${cityRows.length}, terrain grid ${grid.width} x ${grid.height}`);
-  for (const f of ['mumbai.json', 'mumbai-terrain.bin', 'mumbai-buildings.bin']) {
+  for (const f of [`${id}.json`, `${id}-terrain.bin`, `${id}-buildings.bin`]) {
     console.log(`  ${f}: ${(fs.statSync(path.join(OUT, f)).size / 1024).toFixed(0)} KB`);
   }
+}
+
+async function main() {
+  const ids = REGION_ID === 'all' ? Object.keys(REGIONS) : [REGION_ID];
+  for (const id of ids) await buildRegion(id);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

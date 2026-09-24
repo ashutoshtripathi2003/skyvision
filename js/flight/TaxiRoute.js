@@ -38,14 +38,23 @@ export class TaxiRouteView {
     this.mesh.renderOrder = 2;
     this.mesh.frustumCulled = false;
     parent.add(this.mesh);
+    // Red stop bar across the stand's lead-in line: stop with the nose wheel on it.
+    this.stopBar = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: 0.9, depthWrite: false, fog: false,
+        polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }),
+    );
+    this.stopBar.rotation.order = 'YXZ';
+    this.stopBar.visible = false;
+    parent.add(this.stopBar);
   }
 
   setParent(parent) {
-    if (this.mesh.parent !== parent) parent.add(this.mesh);
+    if (this.mesh.parent !== parent) parent.add(this.mesh, this.stopBar);
   }
 
   // route: [[x, z], ...]; heightAt(x, z) gives the ground height; width in metres.
-  show(route, heightAt, width = 3) {
+  show(route, heightAt, width = 3, noseOffset = 0) {
     const positions = [];
     const uvs = [];
     const indices = [];
@@ -75,10 +84,25 @@ export class TaxiRouteView {
     this.mesh.geometry = g;
     this.material.side = THREE.DoubleSide;
     this.mesh.visible = true;
+
+    // Stop bar: at the last point, across the direction of travel, and 'noseOffset' ahead
+    // of it (the route ends where the main gear stops; the bar marks the nose wheel).
+    const [ex, ez] = route[route.length - 1];
+    const [px, pz] = route[route.length - 2] || route[0];
+    const heading = Math.atan2(ex - px, ez - pz);
+    const ahead = noseOffset;
+    const bx = ex + Math.sin(heading) * ahead;
+    const bz = ez + Math.cos(heading) * ahead;
+    this.stopBar.position.set(bx, heightAt(bx, bz) + 0.3, bz);
+    this.stopBar.rotation.set(-Math.PI / 2, 0, 0);
+    this.stopBar.rotation.y = heading;
+    this.stopBar.scale.set(width * 3, width * 0.35, 1);
+    this.stopBar.visible = true;
   }
 
   hide() {
     this.mesh.visible = false;
+    this.stopBar.visible = false;
   }
 
   update(dt) {

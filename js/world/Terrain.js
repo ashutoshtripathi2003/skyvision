@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AIRFIELDS, toRunwayLocal } from './AirfieldData.js';
 import { detailTexture } from '../utils/Textures.js';
+import { createWaterMaterial } from './Water.js';
 import { clamp, lerp } from '../utils/MathUtils.js';
 
 // Height-field terrain. One analytic function heightAt(x, z) is used both to
@@ -153,7 +154,7 @@ export function createTerrain() {
 
   const water = new THREE.Mesh(
     new THREE.PlaneGeometry(LAKE.rx * 2.4, LAKE.rz * 2.4),
-    new THREE.MeshStandardMaterial({ color: 0x2c6f93, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0.93 }),
+    createWaterMaterial({ color: 0x14485c, waveLength: 30, extent: LAKE.rx * 2.4 }),
   );
   water.rotation.x = -Math.PI / 2;
   water.position.set(LAKE.x, WATER_LEVEL, LAKE.z);
