@@ -85,8 +85,9 @@ export function createMumbaiAirports(data) {
     group.add(sock);
   });
   const stands = describeStands(json);
-  group.add(createParkedFleet(stands));
-  return { group, towerEyes, stands };
+  const fleet = createParkedFleet(stands);
+  group.add(fleet);
+  return { group, towerEyes, stands, fleetLOD: fleet.userData.lod };
 }
 
 // Stand list for the taxi-to-gate logic: how much room each stand has (distance

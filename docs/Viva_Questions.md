@@ -75,7 +75,12 @@ emissive with glow sprites. One value `night` from 0 to 1 blends all intensities
 is smooth.
 
 ### 13. How is the aircraft model created?
-It is built in code from the real dimensions of the A320, A350 and A380 (`AircraftTypes.js`), with no 3D
+There are two versions of each type. The one you fly is a **detailed 3D model** of the real A320neo,
+A350-900 or A380-800, converted from the open-source FlightGear simulator (GPL). A converter script
+(`tools/convert-aircraft.mjs`) reads the AC3D text format and changes the coordinate system into ours.
+It computes vertex normals, merges parts by material, and writes glTF binary files that Three.js loads
+with `GLTFLoader`. Parked aircraft far from the camera use a lightweight **procedural** version instead.
+It is built in code from the real dimensions of the A320, A350 and A380 (`AircraftTypes.js`), with no
 model files. The **fuselage** is a set of cross-section rings along the body: the radius grows at the nose,
 stays constant along the cabin, and the belly sweeps up into the tail cone. Neighbouring rings are joined
 with triangles, and each vertex gets a UV coordinate (along, around) so the livery can be wrapped onto it.
@@ -229,6 +234,23 @@ Each runway is built along its own local axis and then rotated to its real headi
 **Q. Are the airline liveries official?**
 No. They are simplified colour schemes (tail, engines, cheatline and the airline name) inspired by Indian
 airlines, used for an educational, non-commercial project. No logos are reproduced.
+
+**Q. How do you repaint a downloaded 3D model in your own airline colours?**
+With a "projection painting" step we wrote ourselves. At conversion time, every texel of the model's
+texture is traced back to the 3D point where it sits on the aircraft (interpolating the triangle's three
+vertices with barycentric coordinates). That position is stored in a helper image, `*.pos.png`, and which
+part the texel belongs to (body, tail, engine, wing...) goes in `*.cat.png`. At runtime the airline
+scheme is drawn in simple side-view pictures, in metres: belly colour, cheatline, titles. Each texel
+then takes its colour from the side view at its 3D position, multiplied by the original texture's grey
+detail (panel lines, doors, windows). Coloured paint from the original, such as Airbus logos or green
+primer, is painted over. So any UV layout can be repainted, and the titles read correctly on both sides.
+
+**Q. Why not show the detailed model for every parked aircraft?**
+Level of detail (LOD). A detailed model has 40,000–110,000 triangles. The fleet is drawn with
+instancing, using the simple procedural model (a few draw calls for about 130 aircraft). Twice a second
+the program finds the parked aircraft nearest the camera (8 on a computer, 3 on a phone). It hides
+their instance by setting its matrix scale to 0 and puts a detailed clone there instead. Clones share
+the same geometry on the GPU, so they cost little memory.
 
 **Q. How is the livery painted on the aircraft?**
 With texture mapping. A 2048 × 512 canvas is drawn in code: the base colour, the cheatline, every passenger

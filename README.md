@@ -13,10 +13,13 @@ A Computer Graphics minor project built with **WebGL + Three.js**. It has three 
    126,000 city buildings, the road network including the sea bridges, and parked aircraft in Indian airline
    colours at the real stands.
 
-You can fly an **Airbus A320, A350 or A380**. Each is modelled from its real dimensions, with the right
-engine count and a livery painted onto the fuselage. After landing, the aircraft **taxis itself along the
-real taxiways to a free gate at the terminal**, following a green route line. The sound is procedural:
-turbofan spool-up, wind, runway rumble, reverse thrust, and a tyre chirp and thud on touchdown.
+You can fly an **Airbus A320neo, A350-900 or A380-800**. These are detailed models of the real aircraft,
+converted from the open-source FlightGear simulator (see [assets/models/NOTICE.md](assets/models/NOTICE.md)).
+They have moving landing gear, spinning engine fans, a windscreen you can look out of from the cockpit
+camera, and lit cabin windows at night. They are repainted at runtime in logo-free Indian airline colour
+schemes. After landing, the aircraft **taxis itself along the real taxiways to a free gate at the
+terminal**, following a green route line. The sound is procedural: turbofan spool-up, wind, runway
+rumble, reverse thrust, and a tyre chirp and thud on touchdown.
 
 ## Running it
 
@@ -129,7 +132,8 @@ js/main.js              app bootstrap, worlds, state (menu/loading/running/pause
 js/core/                Renderer, Scene graph root, ClippingDemo
 js/airport/             SkyVision home airport: Runway (generic, also used for Mumbai), Taxiway, Terminal,
                         Tower, Hangar, Road + car park, Signs, Environment
-js/aircraft/            Aircraft (procedural A320/A350/A380), AircraftTypes (real dimensions + handling),
+js/aircraft/            Aircraft (real model + procedural fallback), ModelLibrary (loads / clones the glTF
+                        models), LiveryPainter (repaints them), AircraftTypes (dimensions + handling),
                         LiveryTexture (painted fuselage texture), Liveries, Fleet (instanced parked aircraft),
                         FlightPath + FlightController (autopilot demo)
 js/flight/              FlightModel (physics), PlayerFlight (landing/crash logic), Autopilot, Taxi (taxi graph,
@@ -146,7 +150,9 @@ js/lighting/            LightingManager, Sky (shader dome + stars), LightRegistr
 js/input/               InputManager (keyboard + mouse)
 js/ui/                  Menu, HUD (demo), FlightHUD (compass, attitude indicator, minimap)
 js/utils/               MathUtils, Textures (procedural canvas textures)
-tools/                  build-mumbai-data.mjs (OpenStreetMap + elevation -> assets/data)
+tools/                  build-mumbai-data.mjs (OpenStreetMap + elevation -> assets/data),
+                        convert-aircraft.mjs + ac3d.mjs (FlightGear AC3D models -> assets/models)
+assets/models/          A320 / A350 / A380 models (glTF), textures and paint maps (GPL-2.0, see NOTICE.md)
 assets/data/            Mumbai region data (JSON + binary height and building grids)
 docs/                   Project report and viva questions
 ```
@@ -155,6 +161,9 @@ docs/                   Project report and viva questions
 
 - Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, available under the ODbL.
 - Elevation: AWS Terrain Tiles (SRTM and other public sources).
+- Aircraft models: converted from the FlightGear A320 family (legoboyvdlp/A320-family), A350 family
+  (ImFrustrated45/A350-Family) and A380 (FGMEMBERS/A380-omega) aircraft, GPL-2.0. See
+  [assets/models/NOTICE.md](assets/models/NOTICE.md) for the sources and the changes made.
 - Airline colour schemes are simplified approximations for an educational, non-commercial project; no logos
   are reproduced and the project is not affiliated with any airline.
 

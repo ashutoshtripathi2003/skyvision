@@ -173,6 +173,7 @@ export class PlayerFlight {
     root.quaternion.copy(this.model.quaternion);
     this.aircraft.setGearExtension(this.model.gearExtension);
     this.aircraft.landingLightOn = this.model.gearDown;
+    if (this.aircraft.setEngineSpin) this.aircraft.setEngineSpin(this.model.throttle);
   }
 
   // Which runway (if any) is under this point, in that runway's local frame (inverse transform).

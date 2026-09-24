@@ -52,9 +52,17 @@ export function fuselageTextures(spec, livery) {
 
   [1, -1].forEach((side) => {
     // Cheatline (livery stripe) below the main-deck windows.
-    const cy = y(aroundAt(cheatHeight, side));
-    ctx.fillStyle = css(livery.cheat);
-    ctx.fillRect(alongX(0.1), cy - metresAround(0.22), alongX(0.8), metresAround(0.44));
+    if (livery.cheat) {
+      const cy = y(aroundAt(cheatHeight, side));
+      ctx.fillStyle = css(livery.cheat);
+      ctx.fillRect(alongX(0.1), cy - metresAround(0.22), alongX(0.8), metresAround(0.44));
+    }
+    if (livery.belly) { // painted underside
+      ctx.fillStyle = css(livery.belly);
+      const top = y(aroundAt(cheatHeight - 0.2, side));
+      const bottom = y(0.5);
+      ctx.fillRect(0, Math.min(top, bottom), W, Math.abs(bottom - top));
+    }
 
     // Passenger windows, skipping the doors. Positions are fractions from tail (0) to nose (1).
     deckHeights.forEach((h, deck) => {

@@ -34,7 +34,7 @@ export function createAirport() {
 // real metres; the valley is drawn at 1/1.4 of real size).
 function createGateAircraft() {
   const group = new THREE.Group();
-  const plane = new Aircraft({ type: 'a320', livery: 0xc0392b });
+  const plane = new Aircraft({ type: 'a320', livery: 'akasa' });
   plane.root.scale.setScalar(1 / 1.4);
   plane.root.position.set(72, 0, GATE_Z[0]);
   plane.root.rotation.y = Math.PI / 2; // nose (+Z local) turned to face +X, the terminal

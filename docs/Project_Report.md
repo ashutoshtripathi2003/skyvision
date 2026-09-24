@@ -31,8 +31,10 @@ elevation data for the terrain and coastline. Latitude/longitude are projected t
 polygons are triangulated and extruded into 3D. Thousands of objects are drawn efficiently with GPU
 instancing, including parked aircraft in Indian airline colour schemes at the real stands.
 
-The player can fly an Airbus A320, A350 or A380. Each is generated procedurally from its real dimensions,
-using lofted cross-sections, lathe-turned engines and a livery texture painted in code. After landing, the
+The player can fly an Airbus A320neo, A350-900 or A380-800. These are detailed models converted from the
+open-source FlightGear simulator (GPL-2.0) by our own AC3D-to-glTF converter. They are repainted in
+logo-free airline schemes by a projection-painting step. Distant parked aircraft use a procedural model
+built from the real dimensions, with lofted cross-sections and lathe-turned engines. After landing, the
 aircraft plans a route over the real taxiway network with Dijkstra's algorithm and taxis itself to a free
 gate. The sound is fully procedural and uses the Web Audio API.
 
@@ -46,7 +48,7 @@ can be pointed to in the source code.
 
 ## 3. Objectives
 
-1. Model a recognisable 3D airport and realistic airliners (A320, A350, A380) procedurally in code, without external model files.
+1. Model a recognisable 3D airport procedurally, and show realistic airliners (A320, A350, A380): detailed open-source models, repainted in our own colours, with a procedural level-of-detail fallback.
 2. Apply translation, rotation, scaling and composite transformations to animate an aircraft and vehicles.
 3. Implement perspective and orthographic projection with multiple camera (viewing) modes.
 4. Implement a lighting model with a smooth day/night transition and night-time artificial lights.
@@ -368,7 +370,21 @@ steering:   target = point 10–30 m further along the route (pure pursuit); ste
 speed:      11 m/s straight, 4.5–7 m/s before turns, v = sqrt(2 · a · remaining) to stop on the mark
 ```
 
-### 10.15 GPU instancing
+### 10.15 Real aircraft models: conversion, repainting and level of detail
+
+```
+convert (Node, once):   AC3D text -> world transform of every object (parent * (R v + t))
+                        -> our frame (x, y, z) = (z_fg, y_fg - ground, -(x_fg - mainGear))
+                        -> vertex normals (smooth groups, crease angle 55 deg) -> merge per material -> .glb
+paint map:              for each texture triangle, for each texel inside it:
+                        barycentric (w0, w1, w2) -> P = w0 P0 + w1 P1 + w2 P2   (3D point of that texel)
+                        store (distance along, height) in *.pos.png, part + side in *.cat.png
+repaint (browser):      colour(texel) = sideView[side](P.z, P.y) x shade(original texel)
+                        shade = original brightness / reference, only for colourless texels
+LOD (every 0.5 s):      nearest N parked aircraft -> detailed clone; its instance matrix -> scale 0
+```
+
+### 10.16 GPU instancing
 
 ```
 for each copy i:  M_i = T(position_i) · R_y(heading_i) · S(width_i, height_i, depth_i)
@@ -473,8 +489,8 @@ Press **O** inside the simulation to save a PNG, then insert the images here:
   weight, engine failure or real aerodynamic coefficients).
 - Vehicles follow fixed loops and do not detect collisions; the player's aircraft does not collide with
   parked aircraft, and the automatic taxi may cut corners slightly on tight turns.
-- The aircraft are procedural models: the proportions are right, but there are no detailed meshes or
-  photo textures. The airport models are stylised primitives. The Mumbai terminals are extruded footprints with
+- The detailed aircraft come from community FlightGear models. Flaps and control surfaces don't move,
+  and landing-gear doors fold with the legs. The airport models are stylised primitives. The Mumbai terminals are extruded footprints with
   flat roofs, and city buildings are boxes from OpenStreetMap bounding boxes (heights are estimated where
   the map has none).
 - The Mumbai data is only as complete as OpenStreetMap: missing aprons are filled with generated stand pads,

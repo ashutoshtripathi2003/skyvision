@@ -4,6 +4,7 @@ import { LIVERIES } from './Liveries.js';
 import { AIRCRAFT_TYPES } from './AircraftTypes.js';
 import { fuselageTextures } from './LiveryTexture.js';
 import { registerEmissive } from '../lighting/LightRegistry.js';
+import { createModelInstance } from './ModelLibrary.js';
 
 // Procedural airliner (A320 / A350 / A380) built from the real dimensions in
 // AircraftTypes.js. Model frame: nose +Z, up +Y, left wing +X, origin on the
@@ -135,12 +136,23 @@ function nacelleGeometry(n) {
 
 // ---- the aircraft -----------------------------------------------------------
 
+// Two representations share one root object:
+//   procedural - the model built in this file (instant; also baked into the
+//                instanced parked fleet)
+//   model      - the detailed real-aircraft model (ModelLibrary.js), attached
+//                as soon as it has loaded and been painted; the procedural one
+//                is then hidden. realModel: false keeps only the procedural one.
 export class Aircraft {
-  constructor({ livery = 'skyvision', withLights = false, type = 'a320' } = {}) {
+  constructor({ livery = 'skyvision', withLights = false, type = 'a320', realModel = true } = {}) {
     this.root = new THREE.Group();
     this.root.rotation.order = 'YXZ'; // yaw, then pitch, then roll - like a real aircraft
     this.withLights = withLights;
+    this.realModel = realModel;
     this.landingLightOn = false;
+    this.model = null;
+    this.gearExtension = 1;
+    this.engineSpin = 0.2;
+    this.lastElapsed = null;
     this.materials = {
       body: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.15, roughness: 0.38, emissive: 0xffffff, emissiveIntensity: 0 }),
       wing: new THREE.MeshStandardMaterial({ color: 0xd4d9df, metalness: 0.35, roughness: 0.42, side: THREE.DoubleSide }),
@@ -159,10 +171,19 @@ export class Aircraft {
   setType(type, livery = this.liveryKey) {
     this.type = type;
     this.spec = AIRCRAFT_TYPES[type] || AIRCRAFT_TYPES.a320;
-    this.root.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); // free the old type's GPU buffers
+    if (this.procedural) this.procedural.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); // free the old type's GPU buffers
     while (this.root.children.length) this.root.remove(this.root.children[0]);
+    this.model = null;
+    this.modelToken = null;
+    this.procedural = new THREE.Group();
+    this.procedural.name = 'procedural';
+    this.root.add(this.procedural);
     this.gear = [];
     this.lights = null;
+    this.lightGroup = null;
+    this.beaconTop = null;
+    this.beaconBottom = null;
+    this.landingLightPos = null;
 
     this.buildFuselage();
     this.buildWings();
@@ -177,12 +198,56 @@ export class Aircraft {
     this.applyLivery(livery);
   }
 
+  // Load (or reuse) the real model of this type in the current livery and swap it in.
+  attachModel() {
+    if (!this.realModel) return Promise.resolve();
+    const token = {};
+    this.modelToken = token;
+    this.modelPromise = createModelInstance(this.type, this.liveryKey).then((instance) => {
+      if (this.modelToken === token) this.useModel(instance);
+    }).catch((err) => console.warn('Real aircraft model unavailable, keeping the built-in one:', err));
+    return this.modelPromise;
+  }
+
+  useModel(instance) {
+    if (this.model) this.root.remove(this.model.root);
+    this.model = instance;
+    this.root.add(instance.root);
+    this.procedural.visible = false;
+    const a = instance.layout.anchors;
+    const v = (p) => new THREE.Vector3(p[0], p[1], p[2]);
+    this.wingTip = v(a.wingTip);
+    this.tailLightPos = v(a.tail).add(new THREE.Vector3(0, 0, -0.15));
+    this.cockpitEye = v(a.eye); // captain's seat
+    if (this.withLights) instance.root.add(this.glareshield(instance.layout));
+    this.beaconTop = v(a.beaconTop);
+    this.beaconBottom = v(a.beaconBottom);
+    this.landingLightPos = v(a.noseGear).add(new THREE.Vector3(0, -0.5, 0.8));
+    if (this.withLights) this.buildLights();
+    this.setGearExtension(this.gearExtension);
+  }
+
+  // A dark instrument panel + glareshield below the windscreen, seen in the
+  // cockpit camera (it sits inside the nose, so it is invisible from outside).
+  glareshield(layout) {
+    const width = Math.min(2.2, layout.dims.cabinHalfWidth * 0.75);
+    const panel = new THREE.Mesh(
+      new THREE.BoxGeometry(width, 0.55, 0.9),
+      new THREE.MeshStandardMaterial({ color: 0x24282d, roughness: 0.85, metalness: 0.1 }),
+    );
+    panel.position.set(this.cockpitEye.x * 0.6, this.cockpitEye.y - 0.62, this.cockpitEye.z + 1.05);
+    return panel;
+  }
+
+  // n1: 0 (idle) .. 1 (full power) - how fast the fan blades turn.
+  setEngineSpin(n1) { this.engineSpin = n1; }
+
   add(geometry, material, position = [0, 0, 0], rotation = null, scale = null) {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(...position);
     if (rotation) mesh.rotation.set(...rotation);
     if (scale) mesh.scale.set(...scale);
-    this.root.add(mesh);
+    this.procedural.add(mesh);
     return mesh;
   }
 
@@ -329,7 +394,7 @@ export class Aircraft {
           leg.add(w);
         }
       }
-      this.root.add(leg);
+      this.procedural.add(leg);
       this.gear.push(leg);
     };
     const bodyBottom = f.centreY - f.radius * f.stretchY;
@@ -343,10 +408,20 @@ export class Aircraft {
 
   // extension: 1 = gear down, 0 = fully retracted
   setGearExtension(extension) {
+    this.gearExtension = extension;
     this.gear.forEach((leg) => {
       leg.rotation.x = (1 - extension) * (Math.PI / 2);
       leg.visible = extension > 0.03;
     });
+    if (this.model) {
+      // Real model: the nose leg folds forward, the main legs fold inwards
+      // (rotation about each leg's hinge at its top).
+      const folded = (1 - extension) * (Math.PI / 2);
+      const { nose, left, right } = this.model.gear;
+      if (nose) { nose.rotation.x = -folded; nose.visible = extension > 0.03; }
+      if (left) { left.rotation.z = -folded; left.visible = extension > 0.03; }
+      if (right) { right.rotation.z = folded; right.visible = extension > 0.03; }
+    }
   }
 
   applyLivery(livery) {
@@ -360,6 +435,7 @@ export class Aircraft {
     m.body.needsUpdate = true;
     m.tail.color.set(l.tail);
     m.engine.color.set(l.engine);
+    this.attachModel();
   }
 
   buildLights() {
@@ -374,9 +450,14 @@ export class Aircraft {
       const sprite = new THREE.Sprite(glow);
       sprite.scale.set(size, size, 1);
       sprite.position.copy(position);
-      this.root.add(mesh, sprite);
+      group.add(mesh, sprite);
       return { bulb, glow };
     };
+    if (this.lightGroup) this.root.remove(this.lightGroup);
+    const group = new THREE.Group();
+    group.name = 'lights';
+    this.lightGroup = group;
+    this.root.add(group);
     const f = this.spec.fuselage;
     const tip = this.wingTip;
     const mirror = (v) => new THREE.Vector3(-v.x, v.y, v.z);
@@ -384,19 +465,24 @@ export class Aircraft {
       navLeft: lamp(0xff2020, 3, tip),                 // red on the left wing tip
       navRight: lamp(0x20ff40, 3, mirror(tip)),        // green on the right
       tail: lamp(0xffffff, 2.5, this.tailLightPos),
-      beacon: lamp(0xff2020, 4, new THREE.Vector3(0, f.centreY + f.radius * f.stretchY + 0.15, 0)),
-      beaconLow: lamp(0xff2020, 4, new THREE.Vector3(0, f.centreY - f.radius * f.stretchY - 0.15, -2)),
+      beacon: lamp(0xff2020, 4, this.beaconTop || new THREE.Vector3(0, f.centreY + f.radius * f.stretchY + 0.15, 0)),
+      beaconLow: lamp(0xff2020, 4, this.beaconBottom || new THREE.Vector3(0, f.centreY - f.radius * f.stretchY - 0.15, -2)),
       strobeL: lamp(0xffffff, 6, tip.clone().add(new THREE.Vector3(0.1, 0, 0.6))),
       strobeR: lamp(0xffffff, 6, mirror(tip).add(new THREE.Vector3(-0.1, 0, 0.6))),
     };
     this.landingLight = new THREE.SpotLight(0xfff4e0, 0, 220, Math.PI / 7, 0.5, 1.5);
-    this.landingLight.position.set(0, f.centreY - f.radius * 0.7, this.spec.gear.nose.z + 1);
-    this.landingLight.target.position.set(0, 0, this.spec.gear.nose.z + 70);
-    this.root.add(this.landingLight, this.landingLight.target);
+    const lampPos = this.landingLightPos || new THREE.Vector3(0, f.centreY - f.radius * 0.7, this.spec.gear.nose.z + 1);
+    this.landingLight.position.copy(lampPos);
+    this.landingLight.target.position.set(0, 0, lampPos.z + 70);
+    group.add(this.landingLight, this.landingLight.target);
   }
 
   // Called every frame with the current night factor k (0 day .. 1 night).
   updateLights(elapsed, k) {
+    // Spinning fans (real model): idle ~20% N1 still turns them visibly.
+    const dt = this.lastElapsed === null ? 0 : Math.min(0.1, elapsed - this.lastElapsed);
+    this.lastElapsed = elapsed;
+    if (this.model) this.model.fans.forEach((fan) => { fan.rotation.z += (0.25 + this.engineSpin * 1.6) * Math.PI * 2 * dt; });
     if (!this.lights) return;
     const set = (light, intensity, glowOpacity) => {
       light.bulb.emissiveIntensity = intensity;

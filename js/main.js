@@ -5,6 +5,7 @@ import { ClippingDemo } from './core/ClippingDemo.js';
 import { LightingManager } from './lighting/LightingManager.js';
 import { CameraManager, CAMERA_MODES, FLIGHT_CAMERA_MODES } from './camera/CameraManager.js';
 import { Aircraft } from './aircraft/Aircraft.js';
+import { setEnvironment } from './aircraft/ModelLibrary.js';
 import { FlightController } from './aircraft/FlightController.js';
 import { VehicleManager } from './vehicles/VehicleManager.js';
 import { PlayerFlight } from './flight/PlayerFlight.js';
@@ -23,6 +24,7 @@ const canvas = document.getElementById('scene-canvas');
 const renderer = createRenderer(canvas, { maxPixelRatio: IS_TOUCH ? 1.5 : 2 });
 const { scene, world, skyVision } = createScene();
 const lighting = new LightingManager(scene, { shadowMapSize: IS_TOUCH ? 1024 : 2048 });
+setEnvironment(createSkyEnvironment(renderer));
 
 // Real-size A320 model (metres); the SkyVision valley is drawn at 1/1.4 of real size.
 const VALLEY_SCALE = 1 / 1.4;
@@ -137,8 +139,18 @@ async function startFlight(mission) {
   appMode = 'flight';
   lastFlight = mission;
   activateWorld(mission.world === 'mumbai' ? mumbai : skyVision);
-  aircraft.applyLivery(menu.airline);
   if (mission.world === 'mumbai') mission = { ...mission, aircraftType: menu.aircraftType };
+  // Swap in the chosen aircraft and wait (on the loading screen) until its
+  // detailed model has loaded and been painted in the airline's colours.
+  const type = activeWorld.aircraftTypes ? mission.aircraftType || 'a320' : 'a320';
+  if (aircraft.type !== type) aircraft.setType(type, menu.airline);
+  else aircraft.applyLivery(menu.airline);
+  if (state !== 'loading') { state = 'loading'; input.enabled = false; menu.showLoading('Preparing the aircraft'); }
+  else menu.setLoadingStep('Preparing the aircraft');
+  await Promise.race([aircraft.modelPromise, new Promise((resolve) => setTimeout(resolve, 20000))]);
+  // Compile every shader now (while the loading screen is up) instead of stalling the first frame.
+  menu.setLoadingStep('Warming up the graphics');
+  try { await renderer.compileAsync(scene, cameras.camera); } catch { /* not supported: compiled on first use */ }
   enterRunning();
   hud.setVisible(false);
   flightHud.setVisible(true);
@@ -337,6 +349,7 @@ function frame() {
   cameras.update(dt, input, aircraft, {
     towerEye: nearestTowerEye(), shake: effects.shake, scale: appMode === 'flight' ? player.size : 1,
   });
+  if (activeWorld.update) activeWorld.update(dt, cameras.camera.position);
   clipping.update(elapsed);
   lighting.sky.follow(cameras.camera);
 
@@ -355,3 +368,24 @@ function frame() {
 }
 
 frame();
+
+// Reflections: a small blurred copy of a sky gradient (PMREM = pre-filtered
+// environment map), used by the aircraft paint and cockpit glass.
+function createSkyEnvironment(webglRenderer) {
+  const envScene = new THREE.Scene();
+  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide,
+    vertexShader: 'varying vec3 p; void main() { p = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `varying vec3 p;
+      void main() {
+        float h = normalize(p).y;
+        vec3 sky = mix(vec3(0.85, 0.9, 0.95), vec3(0.35, 0.55, 0.85), pow(max(h, 0.0), 0.6));
+        vec3 ground = mix(vec3(0.5, 0.52, 0.48), vec3(0.28, 0.3, 0.28), pow(max(-h, 0.0), 0.5));
+        gl_FragColor = vec4(h > 0.0 ? sky : ground, 1.0);
+      }`,
+  })));
+  const pmrem = new THREE.PMREMGenerator(webglRenderer);
+  const texture = pmrem.fromScene(envScene, 0.02).texture;
+  pmrem.dispose();
+  return texture;
+}

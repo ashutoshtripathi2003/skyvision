@@ -28,7 +28,7 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
   await nextFrame();
 
   onProgress('Building airports and parking the fleet');
-  const { group: airportGroup, towerEyes, stands } = createMumbaiAirports(data);
+  const { group: airportGroup, towerEyes, stands, fleetLOD } = createMumbaiAirports(data);
   group.add(airportGroup);
 
   const airports = data.json.airports.map((a) => ({
@@ -60,6 +60,8 @@ export async function loadMumbaiWorld(onProgress = () => {}) {
     aircraftTypes: true,       // A320 / A350 / A380 can be chosen here
     taxiGraph: new TaxiGraph(data.json.taxiways.map((t) => t.p)),
     stands,
+    // Swap the parked aircraft nearest the camera for detailed models.
+    update: (dt, cameraPosition) => fleetLOD.update(dt, cameraPosition),
     glideSlope: 3,
     navScale: 4,
     mapRange: 14000,
